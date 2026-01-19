@@ -7,30 +7,9 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-
-import { toast } from 'sonner';
 import { AuthForm } from '@/app/components/AuthForm';
 import { mockVerifyOtp as verifyOtp } from "@/app/mock/auth";
-
-// async function verifyOtp(data: { admin_id: string; otp: string; purpose: string }) {
-//   const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE}/admin/verify-otp`, {
-//     method: 'POST',
-//     headers: { 'Content-Type': 'application/json' },
-//     body: JSON.stringify(data),
-//   });
-//   if (!res.ok) throw new Error(await res.text());
-//   return res.json();
-// }
-
-async function resendOtp(email: string, purpose: string) {
-  const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE}/admin/resend-otp`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, purpose }),
-  });
-  if (!res.ok) throw new Error(await res.text());
-  return res.json();
-}
+import { toast } from 'sonner';
 
 const otpSchema = z.object({
   otp: z.string().length(6, 'OTP must be 6 digits'),
@@ -54,11 +33,10 @@ export default function VerifyOtpForm() {
     setLoading(true);
     try {
       const { token } = await verifyOtp({ admin_id, otp: values.otp, purpose });
-      
       localStorage.setItem('adminToken', token);
-      router.push('/dashboard'); 
+      router.push('/dashboard');
     } catch (err) {
-        console.error('OTP verification error:', err);
+      console.error('OTP verification error:', err);
     }
     setLoading(false);
   }
@@ -66,34 +44,108 @@ export default function VerifyOtpForm() {
   async function handleResend() {
     setResendLoading(true);
     try {
-      await resendOtp(email, purpose);
-      toast.success('OTP resent!');
+      // await resendOtp(email, purpose);
+      toast.success('OTP resent! Check your email.');
     } catch (err) {
-        console.error('Resend OTP error:', err);
+      console.error('Resend OTP error:', err);
       toast.error('Failed to resend OTP.');
     }
     setResendLoading(false);
   }
 
   return (
-    <AuthForm title="Verify OTP" description={`Enter the OTP sent to ${email}`}>
+    <AuthForm 
+      title="Verify Identity" 
+      description={`Enter the 6-digit code sent to ${email}`}
+    >
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          <FormField control={form.control} name="otp" render={({ field }) => (
-            <FormItem>
-              <FormLabel className="text-white">OTP Code</FormLabel>
-              <FormControl><Input placeholder="123456" className="bg-black/50 border-yellow-300/50 text-white placeholder:text-muted" {...field} /></FormControl>
-              <FormMessage />
-            </FormItem>
-          )} />
-          <Button type="submit" className="w-full bg-yellow-300 text-black hover:bg-yellow-300-hover" disabled={loading}>
-            {loading ? 'Verifying...' : 'Verify'}
+          <FormField 
+            control={form.control} 
+            name="otp" 
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-white text-sm font-medium tracking-wide">Verification Code</FormLabel>
+                <FormControl>
+                  <div className="relative">
+                    <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+                    </svg>
+                    <Input 
+                      placeholder="123456" 
+                      className="bg-gray-900/50 border-gray-700 text-white pl-10 h-11 rounded-lg focus:border-yellow-300 focus:ring-yellow-300/20 text-center tracking-widest text-lg"
+                      maxLength={6}
+                      {...field} 
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                        field.onChange(value);
+                      }}
+                    />
+                  </div>
+                </FormControl>
+                <div className="text-gray-500 text-xs mt-1 flex justify-between">
+                  <span>• Enter the 6-digit code</span>
+                  <span className="text-yellow-300">{field.value?.length || 0}/6</span>
+                </div>
+                <FormMessage className="text-red-400 text-xs" />
+              </FormItem>
+            )} 
+          />
+          
+          {/* OTP Timer/Resend */}
+          <div className="flex items-center justify-between">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleResend}
+              disabled={resendLoading}
+              className="text-yellow-300 hover:text-yellow-400 hover:bg-yellow-300/10 text-sm"
+            >
+              {resendLoading ? (
+                <span className="flex items-center gap-2">
+                  <div className="w-3 h-3 border border-yellow-300 border-t-transparent rounded-full animate-spin"></div>
+                  Sending...
+                </span>
+              ) : (
+                <span className="flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Resend Code
+                </span>
+              )}
+            </Button>
+            
+            <div className="text-gray-400 text-sm">
+              <div className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></div>
+                <span>Code expires in: 05:00</span>
+              </div>
+            </div>
+          </div>
+          
+          <Button 
+            type="submit" 
+            className="w-full bg-yellow-300 hover:bg-yellow-400 text-black font-bold h-11 rounded-lg transition-all duration-300 transform hover:scale-[1.02] active:scale-95 shadow-lg hover:shadow-xl shadow-yellow-300/20"
+            disabled={loading}
+          >
+            {loading ? (
+              <span className="flex items-center justify-center gap-2">
+                <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"></div>
+                Verifying Code...
+              </span>
+            ) : (
+              <span className="flex items-center justify-center gap-2">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Verify & Continue
+              </span>
+            )}
           </Button>
         </form>
       </Form>
-      <Button variant="link" className="text-yellow-300" onClick={handleResend} disabled={resendLoading}>
-        {resendLoading ? 'Resending...' : 'Resend OTP'}
-      </Button>
     </AuthForm>
   );
 }
