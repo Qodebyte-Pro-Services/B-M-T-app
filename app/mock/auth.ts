@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import { admins, otps } from "./db";
 
 const delay = (ms = 500) => new Promise((r) => setTimeout(r, ms));
@@ -113,6 +114,7 @@ export async function mockVerifyOtp(data: {
 
 
 export async function mockForgotPassword(data: { email: string }) {
+  await connection(); 
   await delay();
 
   const admin = admins.find((a) => a.email === data.email);
