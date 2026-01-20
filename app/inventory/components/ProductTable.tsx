@@ -128,12 +128,6 @@ export function ProductTable({ searchQuery }: { searchQuery: string }) {
                 <TableCell className="text-gray-900">{product.lastUpdated}</TableCell>
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-2">
-                    <Button variant="ghost" size="sm">
-                      <Eye className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="sm">
-                      <Edit className="h-4 w-4" />
-                    </Button>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <Button variant="ghost" size="sm">
@@ -141,8 +135,7 @@ export function ProductTable({ searchQuery }: { searchQuery: string }) {
                         </Button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem>View Details</DropdownMenuItem>
-                        <DropdownMenuItem>Edit Product</DropdownMenuItem>
+                        <DropdownMenuItem>View Product</DropdownMenuItem>
                         <DropdownMenuItem className="text-red-600">Delete</DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
