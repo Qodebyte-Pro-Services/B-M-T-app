@@ -88,14 +88,14 @@ export  function InventoryPage() {
 
        
         <TabsContent value="movement">
-          <Card>
+          <Card className="bg-gray-900 border-gray-200">
             <CardHeader>
-              <CardTitle>Stock Movement</CardTitle>
-              <CardDescription>
+              <CardTitle >Stock Movement</CardTitle>
+              <CardDescription >
                 Track all inventory transactions and movements
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className='p-3'>
               <StockMovementTable />
             </CardContent>
           </Card>

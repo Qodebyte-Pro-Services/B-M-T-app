@@ -65,21 +65,20 @@ export function StockMovementTable() {
   ];
 
   return (
-    <div className="space-y-4 ">
-      <div className="rounded-md border">
-        <Table>
+    <div className="space-y-4  bg-gray-900 ">
+      <div className="rounded-md border ">
+        <Table >
           <TableHeader>
             <TableRow>
-              <TableHead>Date & Time</TableHead>
+              <TableHead className="bg-gray-900">Date & Time</TableHead>
               <TableHead>Product</TableHead>
               <TableHead>SKU</TableHead>
               <TableHead>Type</TableHead>
               <TableHead>Quantity</TableHead>
-              <TableHead>Stock Levels</TableHead>
-              <TableHead>Reference</TableHead>
+              <TableHead>Performed By</TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <TableBody >
             {movements.map((movement) => (
               <TableRow key={movement.id}>
                 <TableCell className="font-medium">{movement.date}</TableCell>
@@ -108,15 +107,7 @@ export function StockMovementTable() {
                     </span>
                   </div>
                 </TableCell>
-                <TableCell>
-                  <div className="text-sm">
-                    <span className="text-gray-500">Before: </span>
-                    <span className="font-medium">{movement.before}</span>
-                    <span className="mx-2">→</span>
-                    <span className="text-gray-500">After: </span>
-                    <span className="font-medium">{movement.after}</span>
-                  </div>
-                </TableCell>
+             
                 <TableCell className="font-mono text-sm">{movement.reference}</TableCell>
               </TableRow>
             ))}
@@ -127,8 +118,8 @@ export function StockMovementTable() {
       <div className="flex items-center justify-between text-sm text-gray-500">
         <div>Showing 5 of 1,248 movements</div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm">Previous</Button>
-          <Button variant="outline" size="sm">Next</Button>
+          <Button size="sm">Previous</Button>
+          <Button  size="sm">Next</Button>
         </div>
       </div>
     </div>
