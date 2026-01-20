@@ -1,14 +1,8 @@
 'use client';
+
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { PieLabelRenderProps } from 'recharts/types/polar/Pie';
 
-const data = [
-  { name: 'Suits & Blazers', value: 35, color: '#F59E0B' },
-  { name: 'Shirts', value: 25, color: '#10B981' },
-  { name: 'Trousers', value: 20, color: '#3B82F6' },
-  { name: 'Accessories', value: 12, color: '#8B5CF6' },
-  { name: 'Shoes', value: 8, color: '#EC4899' },
-];
 
 interface CustomTooltipProps {
   active?: boolean;
@@ -20,6 +14,15 @@ interface CustomTooltipProps {
     name: string;
   }>;
 }
+
+
+const data = [
+  { name: 'Suits & Blazers', value: 35, color: '#F59E0B' },
+  { name: 'Shirts', value: 25, color: '#10B981' },
+  { name: 'Trousers', value: 20, color: '#3B82F6' },
+  { name: 'Accessories', value: 12, color: '#8B5CF6' },
+  { name: 'Shoes', value: 8, color: '#EC4899' },
+];
 
 const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
   if (active && payload && payload.length) {
@@ -33,7 +36,6 @@ const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
   return null;
 };
 
-
 const renderLabel = (props: PieLabelRenderProps) => {
   const name = props.name ?? '';
   const percent = props.percent ?? 0;
@@ -42,15 +44,15 @@ const renderLabel = (props: PieLabelRenderProps) => {
 
 export function SalesCategoryChart() {
   return (
-    <div className="aspect-4/3 min-h-65 sm:aspect-5/3 md:aspect-video lg:aspect-5/3 w-full">
+    <div className="w-full h-[300px] sm:h-[350px] md:h-[400px] lg:h-[450px]">
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <Pie
             data={data}
             cx="50%"
             cy="50%"
-            innerRadius={60}
-            outerRadius={100}
+            innerRadius="40%"
+            outerRadius="70%"
             paddingAngle={2}
             dataKey="value"
             label={renderLabel}
@@ -61,11 +63,14 @@ export function SalesCategoryChart() {
             ))}
           </Pie>
           <Tooltip content={<CustomTooltip />} />
-          <Legend 
-            wrapperStyle={{ 
-              color: '#D1D5DB', 
+          <Legend
+            layout="horizontal"
+            verticalAlign="bottom"
+            wrapperStyle={{
+              color: '#D1D5DB',
               fontSize: '12px',
-              padding: '10px 0'
+              padding: '10px 0',
+              width: '100%',
             }}
           />
         </PieChart>
@@ -73,3 +78,4 @@ export function SalesCategoryChart() {
     </div>
   );
 }
+

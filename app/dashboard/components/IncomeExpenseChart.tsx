@@ -29,10 +29,10 @@ const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
     return (
       <div className="bg-gray-900 border border-gray-700 p-3 rounded-lg shadow-lg">
         <p className="text-white font-medium">{label}</p>
-        <p className="text-green-400">Income: ${payload[0].value?.toLocaleString()}</p>
-        <p className="text-red-400">Expenses: ${payload[1].value?.toLocaleString()}</p>
+        <p className="text-green-400">Income: NGN {payload[0].value?.toLocaleString()}</p>
+        <p className="text-red-400">Expenses: NGN {payload[1].value?.toLocaleString()}</p>
         <p className="text-yellow-300">
-          Net: ${((payload[0].value ?? 0) - (payload[1].value ?? 0)).toLocaleString()}
+          Net: NGN {((payload[0].value ?? 0) - (payload[1].value ?? 0)).toLocaleString()}
         </p>
       </div>
     );
@@ -54,7 +54,7 @@ export function IncomeExpenseChart() {
           <YAxis 
             stroke="#9CA3AF"
             fontSize={12}
-            tickFormatter={(value) => `$${value / 1000}k`}
+            tickFormatter={(value) => `NGN {value / 1000}k`}
           />
           <Tooltip content={<CustomTooltip />} />
           <Line 

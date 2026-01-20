@@ -7,7 +7,7 @@ const topProducts = [
     id: 1, 
     name: "Executive Blazer", 
     sold: 142, 
-    revenue: "$28,400", 
+    revenue: "NGN 28,400", 
     growth: "+24%",
     image: "https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=400&h=400&fit=crop",
     category: "Blazers"
@@ -16,7 +16,7 @@ const topProducts = [
     id: 2, 
     name: "Luxury Wool Trousers", 
     sold: 118, 
-    revenue: "$17,700", 
+    revenue: "NGN 17,700", 
     growth: "+18%",
     image: "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?w=400&h=400&fit=crop",
     category: "Pants"
@@ -25,7 +25,7 @@ const topProducts = [
     id: 3, 
     name: "Premium Dress Shirt", 
     sold: 96, 
-    revenue: "$14,400", 
+    revenue: "NGN 14,400", 
     growth: "+32%",
     image: "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?w=400&h=400&fit=crop",
     category: "Shirts"
@@ -34,7 +34,7 @@ const topProducts = [
     id: 4, 
     name: "Designer Leather Belt", 
     sold: 85, 
-    revenue: "$8,500", 
+    revenue: "NGN 8,500", 
     growth: "+15%",
     image: "https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=400&h=400&fit=crop",
     category: "Accessories"
@@ -43,7 +43,7 @@ const topProducts = [
     id: 5, 
     name: "Silk Pocket Square", 
     sold: 73, 
-    revenue: "$3,650", 
+    revenue: "NGN 3,650", 
     growth: "+28%",
     image: "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=400&h=400&fit=crop",
     category: "Accessories"

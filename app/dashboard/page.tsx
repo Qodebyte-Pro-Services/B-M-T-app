@@ -15,7 +15,8 @@ import {
   Package,
   ShoppingCart,
   BarChart3,
-  PieChart
+  PieChart,
+  PieChartIcon
 } from "lucide-react";
 import { DashboardLayout } from './components/DashboardLayout';
 import { TabsContent } from '@/components/ui/tabs';
@@ -34,7 +35,7 @@ export default function DashboardPage() {
   const kpiData = [
     {
       title: "Total Sales",
-      value: "$142,580",
+      value: "NGN 142,580",
       change: "+12.5%",
       changeType: "positive" as const,
       icon: <DollarSign className="h-5 w-5" />,
@@ -50,7 +51,7 @@ export default function DashboardPage() {
     },
     {
       title: "Total Expenses",
-      value: "$42,850",
+      value: "NGN42,850",
       change: "+3.1%",
       changeType: "neutral" as const,
       icon: <TrendingDown className="h-5 w-5" />,
@@ -58,7 +59,7 @@ export default function DashboardPage() {
     },
     {
       title: "Net Profit",
-      value: "$99,730",
+      value: "NGN99,730",
       change: "+18.7%",
       changeType: "positive" as const,
       icon: <TrendingUp className="h-5 w-5" />,
@@ -123,25 +124,23 @@ export default function DashboardPage() {
             </div>
 
             
-            <div  className='grid grid-cols-1 md:grid-cols-2'>
-             <div className="bg-white backdrop-blur-sm border border-gray-800 
-  rounded-xl 
-  p-4 sm:p-5 lg:p-6">
-               <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                    <PieChart className="h-5 w-5 text-yellow-600" />
-                    Sales by Category
-                  </h3>
-                  <p className="text-sm text-gray-800">Revenue distribution</p>
-                </div>
-                <div className="text-sm text-gray-900">
-                  Selected: {dateRange}
-                </div>
-              </div>
-              <SalesCategoryChart />
-             </div>
-            </div>
+            <div className="bg-white backdrop-blur-sm border border-gray-800 rounded-xl p-4 sm:p-5 lg:p-6 w-full max-w-4xl ">
+      
+ 
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-2 sm:gap-0">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+          <h3 className="text-lg sm:text-xl font-semibold text-gray-900 flex items-center gap-2">
+            <PieChartIcon className="h-5 w-5 text-yellow-600" />
+            Sales by Category
+          </h3>
+          <p className="text-sm sm:text-base text-gray-800">Revenue distribution</p>
+        </div>
+        <div className="text-sm sm:text-base text-gray-900">Selected: {dateRange}</div>
+      </div>
+
+      
+      <SalesCategoryChart />
+    </div>
           </div>
 
           
