@@ -105,7 +105,7 @@ export default function ProductDetailPage() {
 
   return (
     <InventoryLayout>
-      <div className="space-y-6 p-4 md:p-6 lg:p-8">
+      <div className="space-y-6 p-1 md:p-3 lg:p-1">
      
         <ProductHeader product={product} />
         

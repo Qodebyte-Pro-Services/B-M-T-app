@@ -48,16 +48,16 @@ export function ProductKPIs({ product }: ProductKPIsProps) {
   ];
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-1 lg:grid-cols-3 xl:grid-cols-5 gap-4">
       {kpis.map((kpi, index) => (
         <Card key={index} className="border-gray-200 bg-white  shadow-lg transition-shadow">
           <CardContent className="p-4">
-            <div className="flex items-center justify-between">
+            <div className="flex  items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">{kpi.title}</p>
-                <p className="text-xl font-bold text-gray-900 mt-1">{kpi.value}</p>
+                <p className="sm:text-xl text-normal font-bold text-gray-900 mt-1">{kpi.value}</p>
               </div>
-              <div className={`${kpi.color} p-2 rounded-lg`}>
+              <div className={`${kpi.color} p-2 rounded-lg `}>
                 <kpi.icon className="h-5 w-5 text-white" />
               </div>
             </div>

@@ -43,6 +43,7 @@ export function InventoryOverview({ searchQuery }: { searchQuery: string }) {
 
   const kpis = [
     { title: "Total Stock", value: "1,248", icon: Package, color: "bg-blue-500" },
+     { title: "In Stock", value: "20", icon: Package, color: "bg-blue-500" },
     { title: "Low Stock", value: "42", icon: AlertTriangle, color: "bg-yellow-500" },
     { title: "Out of Stock", value: "18", icon: AlertTriangle, color: "bg-red-500" },
     { title: "Inventory Sell Value", value: "NGN 248,950", icon: DollarSign, color: "bg-green-500" },
@@ -289,7 +290,7 @@ const chartData = STOCK_DATA.map(item => ({
         </Card>
 
       
-        <div className="grid grid-cols-1 lg:grid-cols-2">
+        <div className="grid grid-cols-1 xl:grid-cols-2">
           <Card className="bg-white">
           <CardHeader>
             <CardTitle className="text-gray-900">Stock Status Distribution</CardTitle>
@@ -380,7 +381,7 @@ const chartData = STOCK_DATA.map(item => ({
       </div>
 
     
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <StockAlertWidget />
         <TopProductsWidget />
       </div>

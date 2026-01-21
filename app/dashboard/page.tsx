@@ -38,16 +38,15 @@ export default function DashboardPage() {
     {
       title: "Total Sales",
       value: "NGN 142,580",
-      change: "+12.5%",
-      changeType: "positive" as const,
+   
       icon: <DollarSign className="h-5 w-5" />,
-      description: "vs last period"
+      description: "earned"
     },
     {
       title: "Total Transactions",
       value: "1,248",
       change: "+8.2%",
-      changeType: "positive" as const,
+   
       icon: <CreditCard className="h-5 w-5" />,
       description: "orders completed"
     },
@@ -55,7 +54,6 @@ export default function DashboardPage() {
       title: "Total Expenses",
       value: "NGN42,850",
       change: "+3.1%",
-      changeType: "neutral" as const,
       icon: <TrendingDown className="h-5 w-5" />,
       description: "operational costs"
     },
@@ -63,7 +61,6 @@ export default function DashboardPage() {
       title: "Net Profit",
       value: "NGN99,730",
       change: "+18.7%",
-      changeType: "positive" as const,
       icon: <TrendingUp className="h-5 w-5" />,
       description: "after all deductions"
     }
@@ -146,7 +143,7 @@ export default function DashboardPage() {
           </div>
 
           
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
             <StockAlertWidget />
             <TopProductsWidget />
           </div>

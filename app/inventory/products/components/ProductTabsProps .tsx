@@ -11,7 +11,7 @@ interface ProductTabsProps {
 export function ProductTabs({ activeTab, onTabChange }: ProductTabsProps) {
   return (
     <Tabs value={activeTab} onValueChange={onTabChange} className="w-full ">
-      <TabsList className="grid grid-cols-3 bg-gray-900 w-full">
+      <TabsList className="grid sm:grid-cols-3 grid-cols-2 h-17  bg-gray-900 w-full">
         <TabsTrigger value="description" className="data-[state=active]:bg-gray-900 data-[state=active]:text-white">
           <FileText className="h-4 w-4 mr-2" />
           Description
