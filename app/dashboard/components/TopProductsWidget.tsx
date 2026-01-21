@@ -52,13 +52,13 @@ const topProducts = [
 
 export function TopProductsWidget() {
   return (
-    <Card className="bg-white backdrop-blur-sm border-gray-800">
+    <Card className="bg-white backdrop-blur-sm shadow-2xl ">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle className="text-lg text-black">Best Performing</CardTitle>
+            <CardTitle className="text-lg text-black">Fast Moving Products</CardTitle>
             <CardDescription className="text-gray-950">
-              Top 5 products by revenue
+              Top 5 products that are fast moving
             </CardDescription>
           </div>
           <div className="text-gray-900">

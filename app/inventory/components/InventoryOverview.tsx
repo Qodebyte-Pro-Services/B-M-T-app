@@ -5,6 +5,25 @@ import { TopProductsWidget } from "@/app/dashboard/components/TopProductsWidget"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Activity, Package, AlertTriangle, DollarSign, TrendingUp, TrendingDown } from "lucide-react";
 import { useState } from "react";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  ResponsiveContainer,
+} from "recharts";
+import { StockByCategoryBarChart } from "./StockByCategoryBarChart";
+
+
+interface StockItem {
+  label: string;
+  count: number;
+  percentage: number;
+  stroke: string;
+  dot: string;
+  description: string;
+}
+
+
 
 export function InventoryOverview({ searchQuery }: { searchQuery: string }) {
   const [hoveredPoint, setHoveredPoint] = useState<number | null>(null);
@@ -29,6 +48,44 @@ export function InventoryOverview({ searchQuery }: { searchQuery: string }) {
     { title: "Inventory Sell Value", value: "NGN 248,950", icon: DollarSign, color: "bg-green-500" },
     { title: "Inventory Cost", value: "NGN 248,950", icon: TrendingUp, color: "bg-indigo-500" },
   ];
+
+  const STOCK_DATA: StockItem[] = [
+  {
+    label: "In Stock",
+    count: 980,
+    percentage: 78.5,
+    stroke: "#10b981",
+    dot: "bg-green-500",
+    description: "Adequate stock levels",
+  },
+  {
+    label: "Low Stock",
+    count: 42,
+    percentage: 3.4,
+    stroke: "#f59e0b",
+    dot: "bg-yellow-500",
+    description: "Below minimum threshold",
+  },
+  {
+    label: "Out of Stock",
+    count: 18,
+    percentage: 1.4,
+    stroke: "#ef4444",
+    dot: "bg-red-500",
+    description: "Requires immediate restocking",
+  },
+];
+
+
+
+
+const chartData = STOCK_DATA.map(item => ({
+  name: item.label,
+  value: item.count,
+  color: item.stroke,
+}));
+
+
 
 
   const stockValues = stockData.map(d => d.stock);
@@ -232,7 +289,8 @@ export function InventoryOverview({ searchQuery }: { searchQuery: string }) {
         </Card>
 
       
-        <Card className="bg-white">
+        <div className="grid grid-cols-1 lg:grid-cols-2">
+          <Card className="bg-white">
           <CardHeader>
             <CardTitle className="text-gray-900">Stock Status Distribution</CardTitle>
             <CardDescription className="text-gray-900">
@@ -242,118 +300,83 @@ export function InventoryOverview({ searchQuery }: { searchQuery: string }) {
           <CardContent>
             <div className="flex flex-col lg:flex-row items-center justify-between gap-6">
             
-              <div className="relative w-64 h-64">
-                <svg className="w-full h-full" viewBox="0 0 100 100">
-               
-                  <circle cx="50" cy="50" r="40" fill="none" stroke="#f3f4f6" strokeWidth="20" />
+            <div className="relative w-64 h-64">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={chartData}
+                          dataKey="value"
+                          nameKey="name"
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={90}
+                          paddingAngle={2}
+                          stroke="none"
+                        >
+                          {chartData.map((entry, index) => (
+                            <Cell key={index} fill={entry.color} />
+                          ))}
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
+
                   
-                
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r="40"
-                    fill="none"
-                    stroke="#10b981"
-                    strokeWidth="20"
-                    strokeDasharray="251.2"
-                    strokeDashoffset="251.2 * 0.1"
-                    transform="rotate(-90 50 50)"
-                    strokeLinecap="round"
-                  />
-                  
-                 
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r="40"
-                    fill="none"
-                    stroke="#f59e0b"
-                    strokeWidth="20"
-                    strokeDasharray="251.2"
-                    strokeDashoffset="251.2 * 0.85"
-                    strokeLinecap="round"
-                    transform="rotate(-90 50 50)"
-                  />
-                  
-               
-                  <circle
-                    cx="50"
-                    cy="50"
-                    r="40"
-                    fill="none"
-                    stroke="#ef4444"
-                    strokeWidth="20"
-                    strokeDasharray="251.2"
-                    strokeDashoffset="251.2 * 0.98" 
-                    strokeLinecap="round"
-                    transform="rotate(-90 50 50)"
-                  />
-                </svg>
-                
-             
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <div className="text-3xl font-bold text-gray-900">1,248</div>
-                  <div className="text-sm text-gray-500">Total Items</div>
-                </div>
-              </div>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                      <div className="text-3xl font-bold text-gray-900">1,248</div>
+                      <div className="text-sm text-gray-500">Total Items</div>
+                    </div>
+            </div>
+
+
               
              
               <div className="flex-1 space-y-4">
-                {[
-                  { 
-                    label: "In Stock", 
-                    value: "980 items", 
-                    percentage: "78.5%",
-                    color: "bg-green-500",
-                    description: "Adequate stock levels"
-                  },
-                  { 
-                    label: "Low Stock", 
-                    value: "42 items", 
-                    percentage: "3.4%",
-                    color: "bg-yellow-500",
-                    description: "Below minimum threshold"
-                  },
-                  { 
-                    label: "Out of Stock", 
-                    value: "18 items", 
-                    percentage: "1.4%",
-                    color: "bg-red-500",
-                    description: "Requires immediate restocking"
-                  },
-                ].map((item, i) => (
-                  <div key={i} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                {STOCK_DATA.map((item) => (
+                  <div
+                    key={item.label}
+                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                  >
                     <div className="flex items-center gap-3">
-                      <div className={`${item.color} h-3 w-3 rounded-full`}></div>
+                      <div className={`${item.dot} h-3 w-3 rounded-full`} />
                       <div>
                         <div className="font-medium text-gray-900">{item.label}</div>
                         <div className="text-sm text-gray-500">{item.description}</div>
                       </div>
                     </div>
+
                     <div className="text-right">
-                      <div className="font-bold text-gray-900">{item.value}</div>
-                      <div className="text-sm text-gray-500">{item.percentage}</div>
+                      <div className="font-bold text-gray-900">
+                        {item.count} items
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {item.percentage}%
+                      </div>
                     </div>
                   </div>
                 ))}
-                
-                {/* Summary */}
-                <div className="mt-4 p-3 bg-gray-900 text-white rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="text-sm opacity-80">Total Inventory Value</div>
-                      <div className="text-xl font-bold">NGN 248,950</div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-sm opacity-80">Avg. Stock Value</div>
-                      <div className="text-xl font-bold">NGN 199.48</div>
-                    </div>
-                  </div>
-                </div>
               </div>
+
             </div>
           </CardContent>
         </Card>
+
+       <Card className="bg-white">
+        <CardHeader>
+          <CardTitle className="text-gray-900">
+            Stock by Category
+          </CardTitle>
+          <CardDescription className="text-gray-500">
+            Number of items available per category
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent>
+          <StockByCategoryBarChart />
+        </CardContent>
+      </Card>
+
+        </div>
       </div>
 
     

@@ -1,8 +1,6 @@
 'use client';
 
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
-import { PieLabelRenderProps } from 'recharts/types/polar/Pie';
-
 
 interface CustomTooltipProps {
   active?: boolean;
@@ -14,7 +12,6 @@ interface CustomTooltipProps {
     name: string;
   }>;
 }
-
 
 const data = [
   { name: 'Suits & Blazers', value: 35, color: '#F59E0B' },
@@ -36,41 +33,35 @@ const CustomTooltip = ({ active, payload }: CustomTooltipProps) => {
   return null;
 };
 
-const renderLabel = (props: PieLabelRenderProps) => {
-  const name = props.name ?? '';
-  const percent = props.percent ?? 0;
-  return `${name}: ${(percent * 100).toFixed(0)}%`;
-};
-
 export function SalesCategoryChart() {
   return (
-    <div className="w-full h-[300px] sm:h-[350px] md:h-[400px] lg:h-[450px]">
-      <ResponsiveContainer width="100%" height="100%">
+    <div className="w-full h-75 sm:h-87.5 md:h-100 lg:h-112.5">
+      <ResponsiveContainer width="100%" height="70%">
         <PieChart>
           <Pie
             data={data}
             cx="50%"
-            cy="50%"
+            cy="45%"
             innerRadius="40%"
             outerRadius="70%"
             paddingAngle={2}
             dataKey="value"
-            label={renderLabel}
-            labelLine={false}
           >
             {data.map((entry, index) => (
               <Cell key={`cell-${index}`} fill={entry.color} />
             ))}
           </Pie>
+
           <Tooltip content={<CustomTooltip />} />
+
           <Legend
             layout="horizontal"
             verticalAlign="bottom"
+            align="center"
             wrapperStyle={{
               color: '#D1D5DB',
               fontSize: '12px',
-              padding: '10px 0',
-              width: '100%',
+              paddingTop: '12px',
             }}
           />
         </PieChart>
@@ -78,4 +69,3 @@ export function SalesCategoryChart() {
     </div>
   );
 }
-

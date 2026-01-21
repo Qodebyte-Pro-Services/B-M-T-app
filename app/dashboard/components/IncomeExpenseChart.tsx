@@ -1,6 +1,14 @@
 'use client';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-// import { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
+
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts';
 
 const data = [
   { month: 'Jan', income: 120000, expenses: 45000 },
@@ -26,13 +34,16 @@ interface CustomTooltipProps {
 
 const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
   if (active && payload && payload.length) {
+    const income = payload.find(p => p.dataKey === 'income')?.value ?? 0;
+    const expenses = payload.find(p => p.dataKey === 'expenses')?.value ?? 0;
+
     return (
-      <div className="bg-gray-900 border border-gray-700 p-3 rounded-lg shadow-lg">
+      <div className="bg-gray-900 border p-3 rounded-lg shadow-lg">
         <p className="text-white font-medium">{label}</p>
-        <p className="text-green-400">Income: NGN {payload[0].value?.toLocaleString()}</p>
-        <p className="text-red-400">Expenses: NGN {payload[1].value?.toLocaleString()}</p>
+        <p className="text-green-400">Income: NGN {income.toLocaleString()}</p>
+        <p className="text-red-400">Expenses: NGN {expenses.toLocaleString()}</p>
         <p className="text-yellow-300">
-          Net: NGN {((payload[0].value ?? 0) - (payload[1].value ?? 0)).toLocaleString()}
+          Net: NGN {(income - expenses).toLocaleString()}
         </p>
       </div>
     );
@@ -42,38 +53,33 @@ const CustomTooltip = ({ active, payload, label }: CustomTooltipProps) => {
 
 export function IncomeExpenseChart() {
   return (
-    <div className="aspect-4/3 min-h-65 sm:aspect-5/3 md:aspect-video  lg:aspect-5/3 w-full">
+    <div className="aspect-4/3 min-h-65 sm:aspect-5/3 md:aspect-video lg:aspect-5/3 w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data}>
+        <BarChart data={data} barGap={8}>
           <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-          <XAxis 
-            dataKey="month" 
+          <XAxis
+            dataKey="month"
             stroke="#9CA3AF"
             fontSize={12}
           />
-          <YAxis 
+          <YAxis
             stroke="#9CA3AF"
             fontSize={12}
-            tickFormatter={(value) => `NGN {value / 1000}k`}
+            tickFormatter={(value: number) => `NGN ${value / 1000}k`}
           />
           <Tooltip content={<CustomTooltip />} />
-          <Line 
-            type="monotone" 
-            dataKey="income" 
-            stroke="#10B981" 
-            strokeWidth={3}
-            dot={{ r: 4 }}
-            activeDot={{ r: 6, strokeWidth: 0 }}
+
+          <Bar
+            dataKey="income"
+            fill="#10B981"
+            radius={[6, 6, 0, 0]}
           />
-          <Line 
-            type="monotone" 
-            dataKey="expenses" 
-            stroke="#EF4444" 
-            strokeWidth={3}
-            dot={{ r: 4 }}
-            activeDot={{ r: 6, strokeWidth: 0 }}
+          <Bar
+            dataKey="expenses"
+            fill="#EF4444"
+            radius={[6, 6, 0, 0]}
           />
-        </LineChart>
+        </BarChart>
       </ResponsiveContainer>
     </div>
   );

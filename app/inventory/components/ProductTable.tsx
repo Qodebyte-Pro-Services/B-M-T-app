@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useState } from "react";
+import Link from "next/link";
 
 type ProductStatus = "in-stock" | "low-stock" | "out-of-stock";
 
@@ -124,6 +125,8 @@ const filteredProducts = products.filter(product => {
   return matchesCategory && matchesSearch;
 });
 
+const [openRowId, setOpenRowId] = useState<number | null>(null);
+
 
   return (
     <div className="space-y-4 text-gray-900">
@@ -161,41 +164,75 @@ const filteredProducts = products.filter(product => {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredProducts.map((product) =>(
-              <TableRow key={product.id}>
-                <TableCell className="font-medium">
-                  <div>
-                    <div>{product.name}</div>
-                    <div className="text-sm text-gray-500">ID: {product.id}</div>
-                  </div>
-                </TableCell>
-                <TableCell className="font-mono text-sm">{product.sku}</TableCell>
-                <TableCell>
-                  <Badge className="bg-gray-900 text-white hover:bg-gray-700">{product.category}</Badge>
-                </TableCell>
-                <TableCell>{product.brand}</TableCell>
-                <TableCell className="font-medium">{product.stock}</TableCell>
-                <TableCell>{getStatusBadge(product.status)}</TableCell>
-                <TableCell className="font-medium">{product.price}</TableCell>
-                <TableCell className="font-medium">{product.value}</TableCell>
-                <TableCell className="text-gray-900">{product.lastUpdated}</TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-2">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm">
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem>View Product</DropdownMenuItem>
-                        <DropdownMenuItem className="text-red-600">Delete</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
+          {filteredProducts.map((product) => (
+  <DropdownMenu
+    key={product.id}
+    open={openRowId === product.id}
+    onOpenChange={(open) =>
+      setOpenRowId(open ? product.id : null)
+    }
+  >
+    <DropdownMenuTrigger asChild>
+      <TableRow
+        className="cursor-pointer hover:bg-gray-50"
+        onClick={() => setOpenRowId(product.id)}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setOpenRowId(product.id);
+        }}
+      >
+        <TableCell className="font-medium">
+          <div>
+            <div>{product.name}</div>
+            <div className="text-sm text-gray-500">
+              ID: {product.id}
+            </div>
+          </div>
+        </TableCell>
+
+        <TableCell className="font-mono text-sm">
+          {product.sku}
+        </TableCell>
+
+        <TableCell>
+          <Badge className="bg-gray-900 text-white">
+            {product.category}
+          </Badge>
+        </TableCell>
+
+        <TableCell>{product.brand}</TableCell>
+        <TableCell className="font-medium">{product.stock}</TableCell>
+        <TableCell>{getStatusBadge(product.status)}</TableCell>
+        <TableCell className="font-medium">{product.price}</TableCell>
+        <TableCell className="font-medium">{product.value}</TableCell>
+        <TableCell>{product.lastUpdated}</TableCell>
+
+       
+        <TableCell className="text-right">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpenRowId(product.id);
+            }}
+          >
+            <MoreVertical className="h-4 w-4" />
+          </Button>
+        </TableCell>
+      </TableRow>
+    </DropdownMenuTrigger>
+
+   
+    <DropdownMenuContent align="end">
+     <Link href={`/inventory/products/${product.id}`}> <DropdownMenuItem>View Product</DropdownMenuItem></Link>
+      <DropdownMenuItem className="text-red-600">
+        Delete
+      </DropdownMenuItem>
+    </DropdownMenuContent>
+  </DropdownMenu>
+))}
+
           </TableBody>
         </Table>
       </div>

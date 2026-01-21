@@ -71,7 +71,8 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
           <nav className="px-4 space-y-1">
             {navigation.map((item) => {
               const Icon = item.icon;
-              const isActive = pathname === item.href;
+              const isActive = pathname.startsWith(item.href);
+
               
               return (
                 <Link

@@ -22,6 +22,8 @@ import { DashboardLayout } from './components/DashboardLayout';
 import { TabsContent } from '@/components/ui/tabs';
 import { IncomeExpenseChart } from './components/IncomeExpenseChart';
 import { SalesCategoryChart } from './components/SalesCategoryChart';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { StockMovementTable } from '../inventory/components/StockMovement';
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState("overview");
@@ -98,7 +100,7 @@ export default function DashboardPage() {
          
           <div className="grid grid-cols-1  gap-6">
            
-            <div className="bg-white backdrop-blur-sm border border-gray-800 
+            <div className="bg-white backdrop-blur-sm shadow-2xl
   rounded-xl 
   p-4 sm:p-5 lg:p-6">
               <div className="flex items-center justify-between mb-6">
@@ -124,7 +126,7 @@ export default function DashboardPage() {
             </div>
 
             
-            <div className="bg-white backdrop-blur-sm border border-gray-800 rounded-xl p-4 sm:p-5 lg:p-6 w-full max-w-4xl ">
+            <div className="bg-white backdrop-blur-sm shadow-2xl rounded-xl p-4 sm:p-5 lg:p-6 w-full  ">
       
  
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-2 sm:gap-0">
@@ -152,14 +154,17 @@ export default function DashboardPage() {
 
         
         <TabsContent value="stock">
-          <div className="bg-gray-900/40 backdrop-blur-sm border border-gray-800 rounded-xl p-6">
-            <h3 className="text-xl font-semibold text-white mb-6">Stock Movement Analysis</h3>
-            <div className="text-center py-12">
-              <Package className="h-12 w-12 text-gray-600 mx-auto mb-4" />
-              <p className="text-gray-400">Stock movement data will appear here</p>
-              <p className="text-sm text-gray-500 mt-2">Based on selected date range: {dateRange}</p>
-            </div>
-          </div>
+          <Card className="bg-gray-900 border-gray-200">
+            <CardHeader>
+              <CardTitle >Stock Movement</CardTitle>
+              <CardDescription >
+                View all inventory movements
+              </CardDescription>
+            </CardHeader>
+            <CardContent className='p-3'>
+              <StockMovementTable />
+            </CardContent>
+          </Card>
         </TabsContent>
 
        
