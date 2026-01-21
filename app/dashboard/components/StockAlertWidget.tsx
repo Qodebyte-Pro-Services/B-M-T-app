@@ -43,7 +43,7 @@ const lowStockItems = [
 
 export function StockAlertWidget() {
   return (
-    <Card className="bg-gray-white backdrop-blur-sm shadow-2xl ">
+    <Card className="bg-gray-white border border-gray-100  shadow-2xl ">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div>

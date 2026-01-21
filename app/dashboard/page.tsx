@@ -97,7 +97,7 @@ export default function DashboardPage() {
          
           <div className="grid grid-cols-1  gap-6">
            
-            <div className="bg-white backdrop-blur-sm shadow-2xl
+            <div className="bg-white border border-gray-100 shadow-2xl
   rounded-xl 
   p-4 sm:p-5 lg:p-6">
               <div className="flex items-center justify-between mb-6">
@@ -123,7 +123,7 @@ export default function DashboardPage() {
             </div>
 
             
-            <div className="bg-white backdrop-blur-sm shadow-2xl rounded-xl p-4 sm:p-5 lg:p-6 w-full  ">
+            <div className="bg-white border border-gray-100 shadow-2xl rounded-xl p-4 sm:p-5 lg:p-6 w-full  ">
       
  
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 gap-2 sm:gap-0">

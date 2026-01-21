@@ -13,7 +13,7 @@ const topProducts = [
 
 export function TopProductsWidget() {
   return (
-    <Card className="bg-white backdrop-blur-sm shadow-2xl">
+    <Card className="bg-white backdrop-blur-sm border border-gray-100 shadow-2xl">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div>
