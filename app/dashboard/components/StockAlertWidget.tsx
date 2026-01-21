@@ -153,7 +153,7 @@ export function StockAlertWidget() {
           ))}
         </div>
         
-        <Button asChild variant="outline" className="w-full mt-6 text-gray-900 hover:bg-gray-50">
+        <Button asChild className="w-full mt-6 text-gray-900 hover:bg-gray-50">
           <Link href="/inventory" className="flex items-center justify-center gap-2">
             View All Inventory
             <ArrowRight className="h-4 w-4" />
