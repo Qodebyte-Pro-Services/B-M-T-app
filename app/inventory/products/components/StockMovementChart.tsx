@@ -82,7 +82,7 @@ export function StockMovementChart({
         <SelectContent>
           <SelectItem value="all">All Variants</SelectItem>
           {variants.map((variant) => (
-            <SelectItem key={variant.id} value={String(variant.id)}>
+            <SelectItem key={variant.id} value={variant.id}>
               {variant.name}
             </SelectItem>
           ))}

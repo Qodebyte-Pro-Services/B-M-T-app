@@ -96,7 +96,7 @@ const selectedVariantData: ProductVariant = product.hasVariations
                   </SelectTrigger>
                   <SelectContent className='bg-gray-900'>
                     {product.variants.map((variant: ProductVariant) => (
-                      <SelectItem key={variant.id} value={String(variant.id)}>
+                      <SelectItem key={variant.id} value={variant.id}>
                         {variant.name} (Current: {variant.quantity})
                       </SelectItem>
                     ))}

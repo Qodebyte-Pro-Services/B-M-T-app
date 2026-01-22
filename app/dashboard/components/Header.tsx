@@ -1,5 +1,5 @@
 'use client';
-import { Bell, Menu, Search } from "lucide-react";
+import { BadgeCent, Bell, Menu, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -41,14 +41,21 @@ export function Header({ onMenuClick }: HeaderProps) {
         </div>
 
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="relative text-gray-400 hover:text-white">
+          {/* <Button variant="ghost" size="icon" className="relative text-gray-400 hover:text-white">
             <Bell className="h-5 w-5" />
             {notifications > 0 && (
               <span className="absolute -top-1 -right-1 h-5 w-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
                 {notifications}
               </span>
             )}
-          </Button>
+          </Button> */}
+
+          <Link href='/pos'>
+            <Button variant="outline">
+              <BadgeCent className="h-4 w-4 mr-2" />
+              POS
+            </Button>
+          </Link>
           
           <div className="hidden md:flex items-center gap-3 px-3 py-2 rounded-lg bg-gray-800">
             <div className="h-8 w-8 rounded-full bg-yellow-300/10 flex items-center justify-center">

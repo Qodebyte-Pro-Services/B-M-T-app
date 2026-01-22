@@ -12,10 +12,8 @@ import {
   CreditCard, 
   TrendingUp, 
   TrendingDown,
-  Package,
   ShoppingCart,
   BarChart3,
-  PieChart,
   PieChartIcon
 } from "lucide-react";
 import { DashboardLayout } from './components/DashboardLayout';

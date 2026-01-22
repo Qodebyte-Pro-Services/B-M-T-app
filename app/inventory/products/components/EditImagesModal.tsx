@@ -26,7 +26,7 @@ export function EditImagesModal({ product, open, onOpenChange }: EditImagesModal
   const [productImages, setProductImages] = useState<string[]>(product.images);
  const [variantImages, setVariantImages] = useState<Record<string, string[]>>(
   product.variants.reduce<Record<string, string[]>>((acc, variant) => {
-    acc[String(variant.id)] = variant.images;
+    acc[variant.id] = variant.images;
     return acc;
   }, {})
 );
@@ -132,7 +132,7 @@ export function EditImagesModal({ product, open, onOpenChange }: EditImagesModal
                         size="icon"
                         variant="destructive"
                         className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                        onClick={() => removeVariantImage(String(variant.id), index)}
+                        onClick={() => removeVariantImage(variant.id, index)}
                       >
                         <X className="h-3 w-3" />
                       </Button>
@@ -145,7 +145,7 @@ export function EditImagesModal({ product, open, onOpenChange }: EditImagesModal
                       multiple
                       accept="image/*"
                       className="hidden"
-                      onChange={(e) => handleVariantImageUpload(String(variant.id), e)}
+                      onChange={(e) => handleVariantImageUpload(variant.id, e)}
                     />
                     <div className="aspect-square rounded-lg border-2 border-dashed border-gray-300 hover:border-gray-400 flex flex-col items-center justify-center transition-colors">
                       <Plus className="h-6 w-6 text-gray-400" />
