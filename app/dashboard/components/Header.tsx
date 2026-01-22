@@ -49,7 +49,12 @@ export function Header({ onMenuClick }: HeaderProps) {
               </span>
             )}
           </Button> */}
-
+          <Link href='/sales/installment-page'>
+            <Button variant="outline" className="mr-4">
+              <BadgeCent className="h-4 w-4 mr-2" />
+              Installments
+            </Button>
+          </Link>
           <Link href='/pos'>
             <Button variant="outline">
               <BadgeCent className="h-4 w-4 mr-2" />
