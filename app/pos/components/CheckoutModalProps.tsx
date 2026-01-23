@@ -98,6 +98,9 @@ export function CheckoutModal({
   
   const isCustomerEligibleForInstallments = customer.id !== 'walk-in';
 
+  const isCustomerVerified = customer.id !== 'walk-in';
+
+
   const handleAmountPaidChange = (value: string) => {
     setAmountPaid(value);
   };
@@ -130,8 +133,10 @@ const calculateInstallments = () => {
 
   const remaining = getRemainingBalance();
   
-  // If numberOfPayments includes down payment, subtract 1 for installments
-  const numberOfInstallments = Math.max(installmentPlan.numberOfPayments - 1, 1);
+  if (installmentPlan.numberOfPayments < 2) return;
+  
+  const numberOfInstallments =
+  installmentPlan.numberOfPayments - 1;
   const perPayment = Number((remaining / numberOfInstallments).toFixed(2));
 
   setInstallmentPlan((prev) => ({
@@ -145,132 +150,162 @@ const calculateInstallments = () => {
 
   useEffect(() => {
     calculateInstallments();
-  }, [useInstallments, installmentPlan.numberOfPayments, installmentPlan.downPayment, total]);
+  }, [useInstallments, installmentPlan.numberOfPayments, installmentPlan.downPayment, amountPaid, total]);
 
-  const handleCompleteSale = () => {
-    // eslint-disable-next-line react-hooks/purity
-    const transactionId = `txn_${Date.now()}`;
-    const timestamp = new Date().toISOString();
-    
+const handleCompleteSale = () => {
+  
+  // eslint-disable-next-line react-hooks/purity
+  const transactionId = `txn_${Date.now()}`;
+  const timestamp = new Date().toISOString();
 
-      if (useInstallments) {
+  // ---- CREDIT GUARD ----
+  if (paymentMethod === 'credit' && !isCustomerVerified) {
+    toast.error('Credit sales are only available for verified customers');
+    return;
+  }
+
+  // ---- INSTALLMENT GUARD ----
+  if (useInstallments) {
     const downPayment = parseFloat(amountPaid) || 0;
     if (downPayment < installmentPlan.downPayment) {
-      toast.error(`Down payment must be at least NGN ${installmentPlan.downPayment}`);
+      toast.error(
+        `Down payment must be at least NGN ${installmentPlan.downPayment}`
+      );
       return;
     }
-        };
+  }
 
-    // Calculate how many installments (excluding down payment)
-    const numberOfInstallments = Math.max(installmentPlan.numberOfPayments - 1, 0);
+  // ---- BUILD PAYMENT SCHEDULE (ONLY IF INSTALLMENTS) ----
+  let paymentSchedule: InstallmentPayment[] = [];
+
+  if (useInstallments) {
+    const numberOfInstallments =
+      installmentPlan.numberOfPayments - 1;
+
     const remaining = installmentPlan.remainingBalance;
-    
-    // If there are no installments (all paid upfront), handle differently
-    let paymentSchedule;
-    
-    if (numberOfInstallments === 0) {
-      paymentSchedule = [
-        {
-          paymentNumber: 1,
-          amount: Number((parseFloat(amountPaid) || installmentPlan.downPayment).toFixed(2)),
-          date: new Date().toISOString(),
-          status: 'paid' as const,
-          type: 'down_payment' as const,
-        },
-      ];
-    } else {
-      // Calculate base installment amount
-      const baseInstallment = Number((remaining / numberOfInstallments).toFixed(2));
-      
-      paymentSchedule = [
-        // Down payment
-        {
-          paymentNumber: 1,
-          amount: Number((parseFloat(amountPaid) || installmentPlan.downPayment).toFixed(2)),
-          date: new Date().toISOString(),
-          status: 'paid' as const,
-          type: 'down_payment' as const,
-        },
-        // Installments
-        ...Array.from({ length: numberOfInstallments }, (_, i) => {
-          const isLast = i === numberOfInstallments - 1;
-          
-          // For the last installment, calculate the remainder to avoid rounding errors
-          const amount = isLast
-            ? Number((remaining - (baseInstallment * (numberOfInstallments - 1))).toFixed(2))
-            : baseInstallment;
-          
-          return {
-            paymentNumber: i + 2,
-            amount,
-            dueDate: calculateDueDate(
-              installmentPlan.startDate,
-              installmentPlan.paymentFrequency,
-              i + 1
-            ),
-            status: 'pending' as const,
-            type: 'installment' as const,
-          };
-        }),
-      ];
-    }
 
-  
-    const transaction = {
+    const baseInstallment = Number(
+      (remaining / numberOfInstallments).toFixed(2)
+    );
+
+    paymentSchedule = [
+  {
+    paymentNumber: 1,
+    amount: getActualDownPayment(),
+    date: timestamp,
+    dueDate: installmentPlan.startDate,
+    status: 'down_payment',
+  },
+  ...Array.from({ length: numberOfInstallments }, (_, i) => {
+    const isLast = i === numberOfInstallments - 1;
+
+    const amount = isLast
+      ? Number(
+          (
+            remaining -
+            baseInstallment * (numberOfInstallments - 1)
+          ).toFixed(2)
+        )
+      : baseInstallment;
+
+    return {
+      paymentNumber: i + 2,
+      amount,
+      dueDate: calculateDueDate(
+        installmentPlan.startDate,
+        installmentPlan.paymentFrequency,
+        i + 1
+      ),
+      status: 'pending',
+    } satisfies InstallmentPayment;
+  }),
+];
+
+  }
+
+  // ---- TRANSACTION OBJECT ----
+  const transaction = {
+    id: transactionId,
+    customer,
+    items: cart,
+    subtotal,
+    tax,
+    total,
+
+    paymentMethod: useInstallments
+      ? 'installment'
+      : paymentMethod,
+
+    amountPaid:
+      paymentMethod === 'credit'
+        ? 0
+        : useInstallments
+        ? getActualDownPayment()
+        : parseFloat(amountPaid) || 0,
+
+    downPayment: useInstallments ? getActualDownPayment() : 0,
+
+    change: paymentMethod === 'credit' ? 0 : calculateChange(),
+
+    timestamp,
+    synced: false,
+    purchaseType,
+
+    paymentStatus: useInstallments ? 'installment' : 'completed',
+
+    ...(useInstallments && {
+      installmentPlan: {
+        ...installmentPlan,
+        downPayment: getActualDownPayment(),
+        remainingBalance: getRemainingBalance(),
+        payments: paymentSchedule,
+      },
+    }),
+
+    ...(paymentMethod === 'credit' && {
+      credit: {
+        waived: true,
+        issuedAt: timestamp,
+      },
+    }),
+  };
+
+  // ---- SAVE TRANSACTION ----
+  const transactions = JSON.parse(
+    localStorage.getItem('pos_transactions') || '[]'
+  );
+  transactions.push(transaction);
+  localStorage.setItem('pos_transactions', JSON.stringify(transactions));
+
+  // ---- SAVE INSTALLMENT PLAN ----
+  if (useInstallments) {
+    const installmentPlans = JSON.parse(
+      localStorage.getItem('installment_plans') || '[]'
+    );
+
+    installmentPlans.push({
       id: transactionId,
       customer,
-      items: cart,
-      subtotal,
-      tax,
       total,
-      paymentMethod: useInstallments ? 'installment' : paymentMethod,
-     amountPaid: useInstallments
-        ? parseFloat(amountPaid) || installmentPlan.downPayment
-        : parseFloat(amountPaid) || 0,
-        downPayment: useInstallments ? parseFloat(amountPaid) || installmentPlan.downPayment : 0,
-      change: calculateChange(),
-      timestamp,
-      synced: false,
-      purchaseType,
-        paymentStatus: useInstallments ? 'installment' : 'completed',
-      ...(useInstallments && {
-       installmentPlan: {
-  ...installmentPlan,
-  downPayment: getActualDownPayment(),
-  remainingBalance: getRemainingBalance(),
-  payments: paymentSchedule,
-},
-      }),
-    };
+      downPayment: getActualDownPayment(),
+      remainingBalance: getRemainingBalance(),
+      numberOfPayments: installmentPlan.numberOfPayments,
+      amountPerPayment: installmentPlan.amountPerPayment,
+      paymentFrequency: installmentPlan.paymentFrequency,
+      startDate: installmentPlan.startDate,
+      payments: paymentSchedule,
+      status: 'active',
+    });
 
-    const actualDownPayment = getActualDownPayment();
-    const remainingBalance = getRemainingBalance();
-    
-    const transactions = JSON.parse(localStorage.getItem('pos_transactions') || '[]');
-    transactions.push(transaction);
-    localStorage.setItem('pos_transactions', JSON.stringify(transactions));
-    
-   
-    if (useInstallments) {
-      const installmentPlans = JSON.parse(localStorage.getItem('installment_plans') || '[]');
-      installmentPlans.push({
-  id: transactionId,
-  customer,
-  total,
-  downPayment: actualDownPayment,
-  remainingBalance,
-  numberOfPayments: installmentPlan.numberOfPayments,
-  amountPerPayment: installmentPlan.amountPerPayment,
-  paymentFrequency: installmentPlan.paymentFrequency,
-  startDate: installmentPlan.startDate,
-  payments: paymentSchedule,
-  status: 'active',
-});
-      localStorage.setItem('installment_plans', JSON.stringify(installmentPlans));
-    }
-    
-    setShowReceipt(true);
-  };
+    localStorage.setItem(
+      'installment_plans',
+      JSON.stringify(installmentPlans)
+    );
+  }
+
+  setShowReceipt(true);
+};
+
 
   const calculateDueDate = (startDate: string, frequency: string, offset: number) => {
     const date = new Date(startDate);
@@ -304,6 +339,11 @@ const calculateInstallments = () => {
     toast('Downloading image...');
   };
 
+useEffect(() => {
+  if (useInstallments) {
+    setAmountPaid(installmentPlan.downPayment.toFixed(2));
+  }
+}, [installmentPlan.downPayment, useInstallments]);
 
 
   if (showReceipt) {
@@ -460,7 +500,7 @@ const calculateInstallments = () => {
 
          
             {isCustomerEligibleForInstallments && (
-              <div className="p-3 bg-gray-800 rounded-lg">
+                <div className="p-3 bg-gray-800 rounded-lg">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <Wallet className="h-5 w-5 text-yellow-400" />
@@ -484,7 +524,56 @@ const calculateInstallments = () => {
                   />
                 </div>
               </div>
+
             )}
+
+
+            {isCustomerVerified && (
+                  <div className="p-3 bg-gray-800 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <CreditCard className="h-5 w-5 text-blue-400" />
+                        <div>
+                          <div className="font-medium">Credit Sale</div>
+                          <div className="text-sm text-gray-400">
+                            Give items now
+                          </div>
+                        </div>
+                      </div>
+                      <Switch
+                        checked={paymentMethod === 'credit'}
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setPaymentMethod('credit');
+                            setUseInstallments(false);
+                            setAmountPaid('0');
+                          } else {
+                            setPaymentMethod('cash');
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+
+            {paymentMethod === 'credit' && (
+            <div className="p-4 bg-blue-900/30 rounded-lg">
+              <div className="text-lg font-bold text-blue-400">
+                Credit Sale Approved
+              </div>
+              <div className="text-sm mt-2">
+                Customer will not pay:
+                <span className="font-bold text-white">
+                  {' '}NGN {total.toFixed(2)}
+                </span>
+              </div>
+              <div className="text-xs text-gray-400 mt-1">
+                No payment required 
+              </div>
+            </div>
+          )}
+
 
          
             {!useInstallments && (
@@ -521,10 +610,11 @@ const calculateInstallments = () => {
                         <Input
                           id="amountPaid"
                           type="number"
-                          value={amountPaid}
+                          value={isNaN(parseFloat(amountPaid)) ? '' : amountPaid}
                           onChange={(e) => handleAmountPaidChange(e.target.value)}
                           min={0}
                           step="0.01"
+                           disabled={paymentMethod === 'credit'}
                         />
                       </div>
 
@@ -541,7 +631,7 @@ const calculateInstallments = () => {
               </div>
             )}
 
-            {/* Installment Payment Section */}
+           
             {useInstallments && (
               <div className="space-y-3">
                 <Label>Installment Payment</Label>
@@ -562,15 +652,14 @@ const calculateInstallments = () => {
                   <div className='flex flex-col gap-2'>
                     <Label htmlFor="installmentAmountPaid">Down Payment Amount</Label>
                     <Input
-                      id="installmentAmountPaid"
-                      type="number"
-                      value={amountPaid}
-                      onChange={(e) => handleAmountPaidChange(e.target.value)}
-                      min={installmentPlan.downPayment}
-                      max={total}
-                      step="0.01"
-                      placeholder={`Minimum: NGN ${installmentPlan.downPayment}`}
-                    />
+                    id="installmentAmountPaid"
+                    type="number"
+                    value={amountPaid}
+                    onChange={(e) => handleAmountPaidChange(e.target.value)}
+                    min={installmentPlan.downPayment}
+                    max={total}
+                    step="0.01"
+                  />
                   </div>
                   
                   {parseFloat(amountPaid) >= installmentPlan.downPayment && (
@@ -799,43 +888,64 @@ const handleInputChange = <K extends keyof InstallmentPlan>(field: K, value: Ins
   }));
 };
 
+const [downPaymentPercent, setDownPaymentPercent] = useState(
+  Math.round((installmentPlan.downPayment / total) * 100)
+);
+
 
   const calculatePaymentSchedule = () => {
-    const schedule = [];
-    const startDate = new Date(installmentPlan.startDate);
-    
-    // Total payments includes down payment
-    const totalPayments = installmentPlan.numberOfPayments;
-    
-    for (let i = 0; i < totalPayments; i++) {
-      const dueDate = new Date(startDate);
-      
-      // For down payment (i === 0), use today's date
-      // For installments (i > 0), calculate based on frequency
-      if (i > 0) {
-        switch (installmentPlan.paymentFrequency) {
-          case 'daily':
-            dueDate.setDate(dueDate.getDate() + i);
-            break;
-          case 'weekly':
-            dueDate.setDate(dueDate.getDate() + (i * 7));
-            break;
-          case 'monthly':
-            dueDate.setMonth(dueDate.getMonth() + i);
-            break;
-        }
+  const schedule = [];
+  const startDate = new Date(installmentPlan.startDate);
+
+  const totalPayments = installmentPlan.numberOfPayments;
+  const numberOfInstallments = totalPayments - 1;
+
+  const remaining = total - installmentPlan.downPayment;
+
+  const base = Number(
+    (remaining / numberOfInstallments).toFixed(2)
+  );
+
+  for (let i = 0; i < totalPayments; i++) {
+    const dueDate = new Date(startDate);
+
+    if (i > 0) {
+      switch (installmentPlan.paymentFrequency) {
+        case 'daily':
+          dueDate.setDate(dueDate.getDate() + i);
+          break;
+        case 'weekly':
+          dueDate.setDate(dueDate.getDate() + i * 7);
+          break;
+        case 'monthly':
+          dueDate.setMonth(dueDate.getMonth() + i);
+          break;
       }
-      
-      schedule.push({
-        paymentNumber: i + 1,
-        amount: i === 0 ? installmentPlan.downPayment : installmentPlan.amountPerPayment,
-        dueDate: dueDate.toISOString().split('T')[0],
-        status: i === 0 ? 'down_payment' : 'pending',
-      });
     }
-    
-    return schedule;
-  };
+
+    const amount =
+      i === 0
+        ? installmentPlan.downPayment
+        : i === totalPayments - 1
+        ? Number(
+            (
+              remaining -
+              base * (numberOfInstallments - 1)
+            ).toFixed(2)
+          )
+        : base;
+
+    schedule.push({
+      paymentNumber: i + 1,
+      amount,
+      dueDate: dueDate.toISOString().split('T')[0],
+      status: i === 0 ? 'paid' : 'pending',
+    });
+  }
+
+  return schedule;
+};
+
 
   const schedule = calculatePaymentSchedule();
 
@@ -850,7 +960,7 @@ const handleInputChange = <K extends keyof InstallmentPlan>(field: K, value: Ins
         </DialogHeader>
 
         <div className="space-y-6">
-          {/* Customer Info */}
+       
           <div className="p-4 bg-gray-800 rounded-lg">
             <div className="flex items-center justify-between">
               <div>
@@ -865,22 +975,28 @@ const handleInputChange = <K extends keyof InstallmentPlan>(field: K, value: Ins
             </div>
           </div>
 
-          {/* Installment Configuration */}
+         
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label htmlFor="downPayment">Down Payment (%)</Label>
-              <Input
-                id="downPayment"
-                type="number"
-                min="10"
-                max="90"
-                value={Math.round((installmentPlan.downPayment / total) * 100)}
-                onChange={(e) => {
-                  const percentage = parseInt(e.target.value) || 30;
-                  const downPayment = Math.ceil((total * percentage) / 100);
-                  handleInputChange('downPayment', downPayment);
-                }}
-              />
+            <Input
+                  id="downPayment"
+                  type="number"
+                  min={10}
+                  max={90}
+                  value={isNaN(downPaymentPercent) ? '' : downPaymentPercent}
+                  onChange={(e) => {
+                    const percent = Number(e.target.value);
+                    if (isNaN(percent)) return;
+
+                    setDownPaymentPercent(percent);
+
+                    const safeTotal = total || 0;
+                    const safePercent = percent || 0;
+                    const downPayment = Math.ceil((safeTotal * safePercent) / 100);
+                    handleInputChange('downPayment', downPayment);
+                  }}
+                />
               <div className="text-sm text-gray-400">
                 Minimum: 10% | Recommended: 30%
               </div>
@@ -938,7 +1054,7 @@ const handleInputChange = <K extends keyof InstallmentPlan>(field: K, value: Ins
             </div>
           </div>
 
-          {/* Summary */}
+         
           <div className="p-4 bg-gray-800 rounded-lg">
             <div className="grid grid-cols-3 gap-4 text-center">
               <div>

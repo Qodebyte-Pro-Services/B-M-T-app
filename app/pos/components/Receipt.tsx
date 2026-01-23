@@ -1,8 +1,5 @@
-import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
+// Receipt.tsx - Updated with inline styles
 import { CartItem, Customer } from "@/app/utils/type";
-import { Calendar } from "lucide-react";
-import { useMemo } from "react";
 
 interface ReceiptProps {
   customer: Customer;
@@ -24,6 +21,8 @@ interface ReceiptProps {
     downPayment: number;
     remainingBalance: number;
   };
+  transactionId?: string; // Add transaction ID
+  receiptDate?: string; // Add receipt date
 }
 
 export function Receipt({
@@ -38,200 +37,335 @@ export function Receipt({
   purchaseType,
   splitPayments = [],
   installmentPlan,
+  transactionId = `TXN-${Date.now().toString().slice(-8)}`,
+  receiptDate = new Date().toLocaleString(),
 }: ReceiptProps) {
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString();
+  // Inline styles for better rendering in print window
+  const styles = {
+    container: {
+      fontFamily: "'Courier New', monospace",
+      fontSize: '14px',
+      lineHeight: '1.4',
+      padding: '20px',
+      backgroundColor: '#fff',
+      color: '#000',
+      maxWidth: '400px',
+      margin: '0 auto',
+    },
+    header: {
+      textAlign: 'center' as const,
+      marginBottom: '15px',
+      borderBottom: '2px dashed #000',
+      paddingBottom: '10px',
+    },
+    logo: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '10px',
+      marginBottom: '10px',
+    },
+    logoBox: {
+      height: '32px',
+      width: '32px',
+      backgroundColor: '#facc15',
+      borderRadius: '8px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    title: {
+      fontSize: '18px',
+      fontWeight: 'bold',
+      marginBottom: '2px',
+    },
+    subtitle: {
+      fontSize: '12px',
+      color: '#666',
+      marginBottom: '5px',
+    },
+    divider: {
+      borderTop: '1px dashed #000',
+      margin: '15px 0',
+    },
+    row: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      marginBottom: '4px',
+    },
+    boldRow: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      marginBottom: '4px',
+      fontWeight: 'bold',
+    },
+    section: {
+      marginBottom: '15px',
+    },
+    sectionTitle: {
+      fontWeight: 'bold',
+      marginBottom: '8px',
+      fontSize: '14px',
+    },
+    badge: {
+      display: 'inline-block',
+      padding: '2px 8px',
+      borderRadius: '12px',
+      fontSize: '11px',
+      fontWeight: '500',
+    },
+    installmentSection: {
+      backgroundColor: '#fef3c7',
+      padding: '10px',
+      borderRadius: '8px',
+      marginTop: '10px',
+      marginBottom: '15px',
+    },
+    footer: {
+      textAlign: 'center' as const,
+      fontSize: '11px',
+      color: '#666',
+      marginTop: '20px',
+      borderTop: '1px dashed #000',
+      paddingTop: '10px',
+    },
+    terms: {
+      fontSize: '10px',
+      color: '#666',
+      marginTop: '10px',
+      fontStyle: 'italic' as const,
+    },
   };
- // eslint-disable-next-line react-hooks/purity
- const receiptId = useMemo(() => `TXN-${Date.now().toString().slice(-8)}`, []);
-  const todayDate = useMemo(() => new Date().toLocaleDateString(), []);
+
+  const formatCurrency = (amount: number) => {
+    return `NGN ${amount.toFixed(2)}`;
+  };
+
   return (
-    <div className="space-y-4 text-sm">
-  
-      <div className="relative">
-        <div className="flex items-center gap-3">
-          <div className="h-8 w-8 bg-yellow-300 rounded-lg flex items-center justify-center">
-            <span className="text-black font-bold text-sm">BMT</span>
+    <div style={styles.container}>
+      {/* Header */}
+      <div style={styles.header}>
+        <div style={styles.logo}>
+          <div style={styles.logoBox}>
+            <span style={{ color: '#000', fontWeight: 'bold', fontSize: '12px' }}>BMT</span>
           </div>
           <div>
-            <div className="font-bold text-gray-100 text-lg">Big Men</div>
-            <div className="text-xs text-gray-100 -mt-1">Transaction Apparel</div>
+            <div style={{ fontWeight: 'bold', fontSize: '16px' }}>Big Men</div>
+            <div style={{ fontSize: '11px', color: '#666' }}>Transaction Apparel</div>
           </div>
         </div>
-      </div>
-
-      <div className="text-center">
-        <h2 className="text-lg font-bold">Big Men Transaction Apparel</h2>
-        <p className="text-gray-300">
-          {installmentPlan ? 'INSTALLMENT SALES RECEIPT' : 'SALES RECEIPT'}
-        </p>
-        <p className="text-xs text-gray-400 mt-1">
-          {new Date().toLocaleDateString()} • {new Date().toLocaleTimeString()}
-        </p>
-      </div>
-
-      <Separator />
-
-     
-      <div>
-        <div className="flex items-center justify-between">
-          <p className="font-medium">{customer.name}</p>
-          <Badge variant="secondary">
-            {customer.id === 'walk-in' ? 'Walk-in' : 'Registered'}
-          </Badge>
+        
+        <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '5px' }}>
+          Big Men Transaction Apparel
         </div>
-        {customer.email && <p className="text-gray-500">{customer.email}</p>}
-        {customer.phone && <p className="text-gray-500">{customer.phone}</p>}
+        <div style={{ fontSize: '14px', marginBottom: '5px' }}>
+          {installmentPlan ? 'INSTALLMENT SALES RECEIPT' : 'SALES RECEIPT'}
+        </div>
+        <div style={{ fontSize: '12px', color: '#666' }}>
+          {receiptDate}
+        </div>
       </div>
 
-      <Separator />
+      {/* Transaction Info */}
+      <div style={styles.section}>
+        <div style={styles.row}>
+          <span>Receipt ID:</span>
+          <span style={{ fontWeight: 'bold' }}>{transactionId}</span>
+        </div>
+        <div style={styles.row}>
+          <span>Purchase Type:</span>
+          <span style={{
+            ...styles.badge,
+            backgroundColor: '#e5e7eb',
+            color: '#374151',
+          }}>
+            {purchaseType === 'in-store' ? 'In-Store' : 'Online'}
+          </span>
+        </div>
+      </div>
 
-    
-      <div className="space-y-1">
-        {cart.map(item => (
-          <div key={item.id} className="flex justify-between">
-            <span>
-              {item.productName} ({item.variantName}) × {item.quantity}
-            </span>
-            <span>NGN {(item.price * item.quantity).toFixed(2)}</span>
+      <div style={styles.divider} />
+
+      {/* Customer Info */}
+      <div style={styles.section}>
+        <div style={styles.sectionTitle}>CUSTOMER INFORMATION</div>
+        <div style={styles.row}>
+          <span>Name:</span>
+          <span style={{ fontWeight: 'bold' }}>{customer.name}</span>
+        </div>
+        {customer.email && (
+          <div style={styles.row}>
+            <span>Email:</span>
+            <span>{customer.email}</span>
+          </div>
+        )}
+        {customer.phone && (
+          <div style={styles.row}>
+            <span>Phone:</span>
+            <span>{customer.phone}</span>
+          </div>
+        )}
+      </div>
+
+      <div style={styles.divider} />
+
+      {/* Items */}
+      <div style={styles.section}>
+        <div style={styles.sectionTitle}>ITEMS PURCHASED</div>
+        {cart.map((item, index) => (
+          <div key={index} style={styles.row}>
+            <div>
+              {item.productName} ({item.variantName})
+              <div style={{ fontSize: '12px', color: '#666' }}>
+                Qty: {item.quantity} × {formatCurrency(item.price)}
+              </div>
+            </div>
+            <div style={{ fontWeight: 'bold' }}>
+              {formatCurrency(item.price * item.quantity)}
+            </div>
           </div>
         ))}
       </div>
 
-      <Separator />
+      <div style={styles.divider} />
 
-      
-      <div className="space-y-2">
-        <div className="flex justify-between items-center">
-          <span>Purchase Type</span>
-          <Badge variant="secondary">
-            {purchaseType === 'in-store' ? 'In-Store' : 'Online'}
-          </Badge>
-        </div>
-
-        <div className="flex justify-between items-center">
-          <span>Payment Method</span>
-          <Badge variant={installmentPlan ? "default" : "secondary"} 
-            className={installmentPlan ? "bg-yellow-500 text-black" : ""}>
+      {/* Payment Info */}
+      <div style={styles.section}>
+        <div style={styles.sectionTitle}>PAYMENT INFORMATION</div>
+        <div style={styles.row}>
+          <span>Method:</span>
+          <span style={{
+            ...styles.badge,
+            backgroundColor: installmentPlan ? '#fbbf24' : '#dbeafe',
+            color: installmentPlan ? '#000' : '#1e40af',
+          }}>
             {paymentMethod === 'split' ? 'Split Payment' : 
-             paymentMethod === 'installment' ? 'Installment' : paymentMethod}
-          </Badge>
+             paymentMethod === 'installment' ? 'Installment' : 
+             paymentMethod.charAt(0).toUpperCase() + paymentMethod.slice(1)}
+          </span>
         </div>
 
-        
         {paymentMethod === 'split' && splitPayments.length > 0 && (
-          <div className="text-sm mt-1">
+          <div style={{ marginTop: '10px' }}>
+            <div style={{ fontSize: '12px', marginBottom: '5px' }}>Split Payments:</div>
             {splitPayments.map((p, i) => (
-              <div key={i} className="flex justify-between">
+              <div key={i} style={{ ...styles.row, fontSize: '12px' }}>
                 <span>{p.method}:</span>
-                <span>NGN {parseFloat(p.amount || '0').toFixed(2)}</span>
+                <span>{formatCurrency(parseFloat(p.amount || '0'))}</span>
               </div>
             ))}
           </div>
         )}
 
-      
         {installmentPlan && (
-          <div className="mt-4 p-3 bg-yellow-900/20 rounded-lg space-y-2">
-            <div className="flex items-center gap-2 font-bold">
-              <Calendar className="h-4 w-4" />
+          <div style={styles.installmentSection}>
+            <div style={{ ...styles.sectionTitle, marginBottom: '10px' }}>
               INSTALLMENT PLAN
             </div>
-            
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <div>
-                <div className="text-gray-400">Down Payment</div>
-                <div className="font-bold">NGN {installmentPlan.downPayment.toFixed(2)}</div>
-              </div>
-              <div>
-                <div className="text-gray-400">Remaining Balance</div>
-                <div className="font-bold">NGN {installmentPlan.remainingBalance.toFixed(2)}</div>
-              </div>
-              <div>
-                <div className="text-gray-400">Payments</div>
-                <div className="font-bold">{installmentPlan.numberOfPayments} × NGN {installmentPlan.amountPerPayment.toFixed(2)}</div>
-              </div>
-              <div>
-                <div className="text-gray-400">Frequency</div>
-                <div className="font-bold capitalize">{installmentPlan.paymentFrequency}</div>
-              </div>
+            <div style={styles.row}>
+              <span>Down Payment:</span>
+              <span style={{ fontWeight: 'bold' }}>
+                {formatCurrency(installmentPlan.downPayment)}
+              </span>
             </div>
-            
-            <div className="text-xs text-gray-400 pt-2 border-t border-yellow-800/30">
-              Next payment due: {installmentPlan.startDate}
+            <div style={styles.row}>
+              <span>Remaining Balance:</span>
+              <span style={{ fontWeight: 'bold' }}>
+                {formatCurrency(installmentPlan.remainingBalance)}
+              </span>
+            </div>
+            <div style={styles.row}>
+              <span>Payment Plan:</span>
+              <span>
+                {installmentPlan.numberOfPayments} × {formatCurrency(installmentPlan.amountPerPayment)}
+              </span>
+            </div>
+            <div style={styles.row}>
+              <span>Frequency:</span>
+              <span style={{ textTransform: 'capitalize' }}>
+                {installmentPlan.paymentFrequency}
+              </span>
+            </div>
+            <div style={{ fontSize: '11px', marginTop: '8px', color: '#666' }}>
+              Next payment: {new Date(installmentPlan.startDate).toLocaleDateString()}
             </div>
           </div>
         )}
       </div>
 
-      <Separator />
+      <div style={styles.divider} />
 
-     
-      <div className="space-y-1">
-        <div className="flex justify-between">
-          <span>Subtotal</span>
-          <span>NGN {subtotal.toFixed(2)}</span>
+      {/* Totals */}
+      <div style={styles.section}>
+        <div style={styles.sectionTitle}>TOTALS</div>
+        <div style={styles.row}>
+          <span>Subtotal:</span>
+          <span>{formatCurrency(subtotal)}</span>
         </div>
-        <div className="flex justify-between">
-          <span>Tax</span>
-          <span>NGN {tax.toFixed(2)}</span>
+        <div style={styles.row}>
+          <span>Tax:</span>
+          <span>{formatCurrency(tax)}</span>
         </div>
-        <div className="flex justify-between font-bold">
-          <span>Total</span>
-          <span>NGN {total.toFixed(2)}</span>
+        <div style={styles.boldRow}>
+          <span>Total:</span>
+          <span>{formatCurrency(total)}</span>
         </div>
       </div>
 
-      <Separator />
+      <div style={styles.divider} />
 
-     
-      <div className="space-y-2">
-        <div className="flex justify-between">
-          <span>Amount Paid</span>
-          <span>NGN {amountPaid.toFixed(2)}</span>
+      {/* Payment Summary */}
+      <div style={styles.section}>
+        <div style={styles.sectionTitle}>PAYMENT SUMMARY</div>
+        <div style={styles.row}>
+          <span>Amount Paid:</span>
+          <span style={{ fontWeight: 'bold' }}>{formatCurrency(amountPaid)}</span>
         </div>
-
+        
         {paymentMethod !== 'installment' && (
-          <div className="flex justify-between">
-            <span>Change</span>
-            <span>NGN {change.toFixed(2)}</span>
+          <div style={styles.row}>
+            <span>Change:</span>
+            <span>{formatCurrency(change)}</span>
           </div>
         )}
 
         {installmentPlan && (
           <>
-            <div className="flex justify-between text-yellow-300">
-              <span>Down Payment (Paid)</span>
-              <span>NGN {amountPaid.toFixed(2)}</span>
+            <div style={{ ...styles.row, color: '#92400e' }}>
+              <span>Down Payment (Paid):</span>
+              <span style={{ fontWeight: 'bold' }}>{formatCurrency(amountPaid)}</span>
             </div>
-            <div className="flex justify-between">
-              <span>Balance Due</span>
-              <span>NGN {(total - amountPaid).toFixed(2)}</span>
+            <div style={styles.row}>
+              <span>Balance Due:</span>
+              <span style={{ fontWeight: 'bold' }}>
+                {formatCurrency(total - amountPaid)}
+              </span>
             </div>
           </>
         )}
       </div>
 
-      <Separator />
+      <div style={styles.divider} />
 
-     
+      {/* Terms & Footer */}
       {installmentPlan && (
-        <div className="text-xs text-gray-400 space-y-1">
-          <div className="font-bold">INSTALLMENT TERMS:</div>
-          <div>1. Payments are due {installmentPlan.paymentFrequency}.</div>
-          <div>2. Late payments may incur additional fees.</div>
-          <div>3. Products remain property of Big Men Transaction Apparel until fully paid.</div>
+        <div style={styles.terms}>
+          <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>INSTALLMENT TERMS:</div>
+          <div>1. Payments due {installmentPlan.paymentFrequency}.</div>
+          <div>2. Late payments incur additional fees.</div>
+          <div>3. Ownership transfers upon full payment.</div>
           <div>4. Default may result in collection proceedings.</div>
         </div>
       )}
 
-     
-      <div className="text-center text-xs text-gray-400 pt-4">
-        <div>Thank you for your business!</div>
-        <div className="mt-1">For inquiries: contact@bigmenapparel.com | 0800-BIG-MEN</div>
-         <div className="mt-2">
-          Receipt ID: {receiptId} • {todayDate}
+      <div style={styles.footer}>
+        <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>
+          Thank you for your business!
+        </div>
+        <div>For inquiries: contact@bigmenapparel.com</div>
+        <div>Phone: 0800-BIG-MEN</div>
+        <div style={{ marginTop: '10px', fontSize: '10px' }}>
+          Receipt ID: {transactionId} • Printed: {new Date().toLocaleString()}
         </div>
       </div>
     </div>

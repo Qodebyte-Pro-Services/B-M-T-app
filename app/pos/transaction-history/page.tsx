@@ -12,7 +12,8 @@ import { Label } from "@/components/ui/label";
 import { toast } from 'sonner';
 import Link from 'next/link';
 import { Transaction } from '@/app/utils/type';
-
+import { Receipt } from '../components/Receipt';
+import ReactDOMServer from 'react-dom/server';
 interface TransactionItem {
   id: string;
   productName: string;
@@ -58,6 +59,8 @@ export default function DailyHistoryPage() {
     
     return matchesDate && matchesSearch;
   });
+
+
 
 
   const todaysTransactions = transactions.filter(t => 
@@ -121,6 +124,8 @@ export default function DailyHistoryPage() {
       case 'card': return '💳';
       case 'transfer': return '📱';
       case 'split': return '🔀';
+      case 'installment': return '📆';
+      case 'credit': return '💳';
       default: return '💵';
     }
   };
@@ -136,7 +141,7 @@ const paymentMethodCounts = todaysTransactions.reduce(
   (acc, t) => {
     acc[t.paymentMethod] = (acc[t.paymentMethod] || 0) + 1;
     return acc;
-  }, {} as Record<'cash' | 'card' | 'transfer' | 'split' | 'installment', number>
+  }, {} as Record<'cash' | 'card' | 'transfer' | 'split' | 'installment' | 'credit', number>
 
   
 );
@@ -161,6 +166,160 @@ const paymentMethodRatio = {
   split: ((paymentMethodCounts['split'] || 0) / totalTx) * 100,
 };
 
+const creditTransactions = todaysTransactions.filter(
+  t => t.paymentMethod === 'credit'
+);
+
+const totalCreditValue = creditTransactions.reduce(
+  (sum, t) => sum + t.total,
+  0
+);
+
+
+
+
+const totalInstallmentValue = installmentTransactions.reduce(
+  (sum, t) => sum + t.total,
+  0
+);
+
+const totalDownPayments = installmentTransactions.reduce(
+  (sum, t) => sum + (t.installmentPlan?.downPayment || 0),
+  0
+);
+
+const totalInstallmentRemaining = installmentTransactions.reduce(
+  (sum, t) => sum + (t.installmentPlan?.remainingBalance || 0),
+  0
+);
+
+
+const handlePrintReceipt = (transaction: Transaction) => {
+  const receiptHtml = ReactDOMServer.renderToString(
+    <Receipt
+      customer={transaction.customer}
+      cart={transaction.items}
+      subtotal={transaction.subtotal || transaction.total - transaction.tax}
+      tax={transaction.tax}
+      total={transaction.total}
+      paymentMethod={transaction.paymentMethod}
+      amountPaid={transaction.amountPaid || transaction.total}
+      change={(transaction.amountPaid || transaction.total) - transaction.total}
+      purchaseType={transaction.purchaseType || 'in-store'}
+      splitPayments={transaction.splitPayments?.map(sp => ({
+        method: sp.method,
+        amount: sp.amount.toString(),
+      }))}
+      installmentPlan={transaction.installmentPlan}
+      transactionId={transaction.id}
+      receiptDate={new Date(transaction.timestamp).toLocaleString()}
+    />
+  );
+
+  const printWindow = window.open('', '_blank', 'width=500,height=800');
+  if (!printWindow) return;
+
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Receipt - ${transaction.id}</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style>
+          @media print {
+            @page {
+              size: auto;
+              margin: 0mm;
+            }
+            body {
+              margin: 0;
+              padding: 10px;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            .no-print { display: none !important; }
+          }
+          
+          body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Courier New', monospace;
+            background: white;
+          }
+          
+          .print-controls {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+          }
+          
+          .print-controls button {
+            background: #111827;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: sans-serif;
+            font-size: 14px;
+            margin-right: 10px;
+          }
+          
+          .print-controls button:hover {
+            background: #1f2937;
+          }
+          
+          .print-controls button:last-child {
+            background: #dc2626;
+          }
+          
+          .print-controls button:last-child:hover {
+            background: #b91c1c;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="print-controls no-print">
+          <button onclick="window.print()">🖨️ Print Receipt</button>
+          <button onclick="window.close()">❌ Close</button>
+        </div>
+        ${receiptHtml}
+        
+        <script>
+          // Auto-print option (uncomment if you want auto-print)
+          // setTimeout(() => { window.print(); }, 500);
+          
+          // Auto-close after printing
+          window.onafterprint = function() {
+            setTimeout(() => {
+              window.close();
+            }, 1000);
+          };
+          
+          // Keyboard shortcuts
+          document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'p') {
+              e.preventDefault();
+              window.print();
+            }
+            if (e.key === 'Escape') {
+              window.close();
+            }
+          });
+        </script>
+      </body>
+    </html>
+  `);
+
+  printWindow.document.close();
+  printWindow.focus();
+};
 
   return (
       <div className="space-y-6 p-4 md:p-6 lg:p-8 bg-white">
@@ -321,6 +480,43 @@ const paymentMethodRatio = {
       </div>
     </CardContent>
   </Card>
+
+
+<Card className="text-gray-900 bg-white border shadow-2xl">
+  <CardContent className="p-4">
+    <div className="flex items-center justify-between">
+      <div>
+        <div className="text-sm text-gray-500">Credit (Waived)</div>
+        <div className="text-xl font-bold">
+          {creditTransactions.length}
+        </div>
+        <div className="text-xs text-gray-500">
+          Value: NGN {totalCreditValue.toFixed(2)}
+        </div>
+      </div>
+      <div className="bg-blue-600 p-2 rounded-lg">
+        <CreditCard className="h-5 w-5 text-white" />
+      </div>
+    </div>
+  </CardContent>
+</Card>
+
+
+<Card className="text-gray-900 bg-white border shadow-2xl">
+  <CardContent className="p-4">
+    <div className="text-sm text-gray-500">Installments</div>
+    <div className="text-xl font-bold">
+      NGN {totalInstallmentValue.toFixed(2)}
+    </div>
+    <div className="text-xs text-gray-500 mt-1">
+      Down: NGN {totalDownPayments.toFixed(2)}
+    </div>
+    <div className="text-xs text-gray-500">
+      Remaining: NGN {totalInstallmentRemaining.toFixed(2)}
+    </div>
+  </CardContent>
+</Card>
+
         </div>
 
 
@@ -445,16 +641,24 @@ const paymentMethodRatio = {
                             {transaction.synced ? 'Synced' : 'Unsynced'}
                           </Badge>
                         </TableCell>
-                        <TableCell>
-                            {transaction.paymentMethod === 'installment' && (
-                            <Badge variant="default" className="ml-2 bg-yellow-500 text-black">
-                                Installment
-                            </Badge>
-                            )}
-                        </TableCell>
+                                            <TableCell>
+                        {transaction.paymentMethod === 'installment' && transaction.installmentPlan && (
+                          <Badge className="bg-yellow-500 text-black">
+                            Remaining: NGN {transaction.installmentPlan.remainingBalance.toFixed(2)}
+                          </Badge>
+                        )}
+
+                        {transaction.paymentMethod === 'credit' && (
+                          <Badge className="bg-blue-600 text-white">
+                            Credit (Waived)
+                          </Badge>
+                        )}
+                      </TableCell>
+
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
                             {!transaction.synced && (
+                              
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -464,6 +668,14 @@ const paymentMethodRatio = {
                                 Sync
                               </Button>
                             )}
+                              <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handlePrintReceipt(transaction)}
+                            >
+                              Print
+                            </Button>
+
                             <Button
                               size="sm"
                               variant="destructive"

@@ -123,11 +123,15 @@ export interface Transaction {
   tax: number;
   total: number;
   discount?: number;
-  paymentMethod: 'cash' | 'card' | 'transfer' | 'split' | 'installment';
+  paymentMethod: 'cash' | 'card' | 'transfer' | 'split' | 'installment' | 'credit';
   amountPaid: number;
   change: number;
   timestamp: string;
   synced: boolean;
   purchaseType?: 'in-store' | 'online';
   installmentPlan?: InstallmentPlan;
+  splitPayments?: { method: string; amount: number }[];
+  credit?:  {
+  waived: true
+}
 }
