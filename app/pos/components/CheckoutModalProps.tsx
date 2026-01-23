@@ -33,6 +33,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import ReactDOMServer from 'react-dom/server';
 
 interface CheckoutModalProps {
   open: boolean;
@@ -323,8 +324,211 @@ const handleCompleteSale = () => {
     return date.toISOString().split('T')[0];
   };
 
-  const handlePrintReceipt = () => {
-    window.print();
+ const handlePrintReceipt = () => {
+    const transactionId = `txn_${Date.now()}`;
+    
+    const receiptHtml = ReactDOMServer.renderToString(
+      <Receipt
+        customer={customer}
+        cart={cart}
+        subtotal={subtotal}
+        tax={tax}
+        total={total}
+        paymentMethod={useInstallments ? 'installment' : paymentMethod}
+        amountPaid={parseFloat(amountPaid) || 0}
+        change={calculateChange()}
+        purchaseType={purchaseType}
+        splitPayments={splitPayments}
+        installmentPlan={useInstallments ? installmentPlan : undefined}
+      />
+    );
+
+    const printWindow = window.open('', '_blank', 'width=500,height=800');
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Receipt - ${transactionId}</title>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            /* Tailwind-like utility classes for receipt */
+            .space-y-4 > * + * { margin-top: 1rem; }
+            .space-y-2 > * + * { margin-top: 0.5rem; }
+            .space-y-1 > * + * { margin-top: 0.25rem; }
+            .flex { display: flex; }
+            .justify-between { justify-content: space-between; }
+            .items-center { align-items: center; }
+            .gap-3 { gap: 0.75rem; }
+            .gap-2 { gap: 0.5rem; }
+            .mr-2 { margin-right: 0.5rem; }
+            .mt-6 { margin-top: 1.5rem; }
+            .mt-4 { margin-top: 1rem; }
+            .mt-2 { margin-top: 0.5rem; }
+            .mt-1 { margin-top: 0.25rem; }
+            .pt-4 { padding-top: 1rem; }
+            .p-3 { padding: 0.75rem; }
+            .p-4 { padding: 1rem; }
+            .text-sm { font-size: 0.875rem; }
+            .text-xs { font-size: 0.75rem; }
+            .text-lg { font-size: 1.125rem; }
+            .font-bold { font-weight: 700; }
+            .font-medium { font-weight: 500; }
+            .font-semibold { font-weight: 600; }
+            .text-center { text-align: center; }
+            .text-gray-100 { color: #f3f4f6; }
+            .text-gray-300 { color: #d1d5db; }
+            .text-gray-400 { color: #9ca3af; }
+            .text-gray-500 { color: #6b7280; }
+            .text-gray-600 { color: #4b5563; }
+            .text-gray-900 { color: #111827; }
+            .text-white { color: #ffffff; }
+            .text-black { color: #000000; }
+            .text-yellow-300 { color: #fbbf24; }
+            .text-yellow-400 { color: #fbbf24; }
+            .text-blue-400 { color: #60a5fa; }
+            .text-green-800 { color: #166534; }
+            .text-red-600 { color: #dc2626; }
+            .bg-yellow-300 { background-color: #fbbf24; }
+            .bg-yellow-500 { background-color: #eab308; }
+            .bg-yellow-900\/20 { background-color: rgba(120, 53, 15, 0.2); }
+            .bg-blue-900\/30 { background-color: rgba(30, 58, 138, 0.3); }
+            .bg-green-50 { background-color: #f0fdf4; }
+            .bg-gray-800 { background-color: #1f2937; }
+            .bg-gray-900 { background-color: #111827; }
+            .bg-white { background-color: #ffffff; }
+            .rounded-lg { border-radius: 0.5rem; }
+            .rounded-sm { border-radius: 0.125rem; }
+            .border { border-width: 1px; }
+            .border-gray-700 { border-color: #374151; }
+            .border-gray-800 { border-color: #1f2937; }
+            .border-yellow-800\/30 { border-color: rgba(146, 64, 14, 0.3); }
+            .overflow-hidden { overflow: hidden; }
+            .grid { display: grid; }
+            .grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+            .grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+            .w-full { width: 100%; }
+            .h-8 { height: 2rem; }
+            .w-8 { width: 2rem; }
+            .h-4 { height: 1rem; }
+            .w-4 { width: 1rem; }
+            .h-5 { height: 1.25rem; }
+            .w-5 { width: 1.25rem; }
+            .capitalize { text-transform: capitalize; }
+            .uppercase { text-transform: uppercase; }
+            
+            /* Receipt specific styles */
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+              background: #111827;
+              color: white;
+              margin: 0;
+              padding: 20px;
+              line-height: 1.5;
+            }
+            
+            @media print {
+              @page {
+                size: auto;
+                margin: 0mm;
+              }
+              body {
+                margin: 0;
+                padding: 10px;
+                background: white !important;
+                color: black !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              .no-print { display: none !important; }
+              .bg-yellow-300 { background-color: #facc15 !important; }
+              .bg-yellow-500 { background-color: #eab308 !important; }
+              .bg-gray-800 { background-color: #f3f4f6 !important; }
+              .bg-gray-900 { background-color: #ffffff !important; }
+              .text-white { color: #000000 !important; }
+              .text-gray-100 { color: #000000 !important; }
+              .text-gray-300 { color: #000000 !important; }
+              .text-gray-400 { color: #666666 !important; }
+              .border-gray-700 { border-color: #ddd !important; }
+              .border-gray-800 { border-color: #ddd !important; }
+            }
+            
+            /* Print controls */
+            .print-controls {
+              position: fixed;
+              top: 10px;
+              right: 10px;
+              z-index: 1000;
+              background: white;
+              padding: 10px;
+              border-radius: 5px;
+              box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+              border: 1px solid #ddd;
+            }
+            
+            .print-controls button {
+              background: #111827;
+              color: white;
+              border: none;
+              padding: 8px 16px;
+              border-radius: 4px;
+              cursor: pointer;
+              font-family: sans-serif;
+              font-size: 14px;
+              margin-right: 10px;
+            }
+            
+            .print-controls button:hover {
+              background: #1f2937;
+            }
+            
+            .print-controls button:last-child {
+              background: #dc2626;
+            }
+            
+            .print-controls button:last-child:hover {
+              background: #b91c1c;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="print-controls no-print">
+            <button onclick="window.print()">🖨️ Print Receipt</button>
+            <button onclick="window.close()">❌ Close</button>
+          </div>
+          ${receiptHtml}
+          
+          <script>
+            // Auto-print option (uncomment if you want auto-print)
+            // setTimeout(() => { window.print(); }, 500);
+            
+            // Auto-close after printing
+            window.onafterprint = function() {
+              setTimeout(() => {
+                window.close();
+              }, 1000);
+            };
+            
+            // Keyboard shortcuts
+            document.addEventListener('keydown', function(e) {
+              if (e.ctrlKey && e.key === 'p') {
+                e.preventDefault();
+                window.print();
+              }
+              if (e.key === 'Escape') {
+                window.close();
+              }
+            });
+          </script>
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+    printWindow.focus();
   };
 
   const handleShareReceipt = () => {
