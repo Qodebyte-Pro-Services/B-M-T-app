@@ -91,21 +91,21 @@ export function PurchaseTypeChart({ transactions }: PurchaseTypeChartProps) {
       {chartData.length > 0 ? (
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
-            <Pie
-              data={chartData}
-              cx="50%"
-              cy="50%"
-              label={({ index }) =>
-                `${chartData[index].name}: ${chartData[index].percentage}%`
-              }
-              outerRadius={80}
-              fill="#8884d8"
-              dataKey="value"
-            >
-              {chartData.map((entry, index) => (
-                <Cell key={index} fill={entry.color} />
-              ))}
-            </Pie>
+          <Pie
+          data={chartData}
+          cx="50%"
+          cy="50%"
+          outerRadius={80}
+          dataKey="value"
+          isAnimationActive={false}   
+          label={({ name = 'Unknown', percent = 0 }: { name?: string; percent?: number }) =>
+            `${name}: ${(percent * 100).toFixed(1)}%`
+          }
+        >
+          {chartData.map((entry, index) => (
+            <Cell key={index} fill={entry.color} />
+          ))}
+        </Pie>
             <Tooltip content={<CustomTooltip />} />
             <Legend content={<CustomLegend />} />
           </PieChart>

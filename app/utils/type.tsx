@@ -163,3 +163,25 @@ export const customers: Customer[] = [
   { id: 'cust-2', name: 'Jane Smith', email: 'jane@example.com', phone: '+0987654321' },
   { id: 'cust-3', name: 'Robert Johnson', email: 'robert@example.com', phone: '+1122334455' },
 ];
+
+export type Expense = {
+  id: string;
+  name: string;
+  categoryId: string;
+  amount: number;
+  note?: string;
+  receiptUrl?: string;
+  status: 'approved' | 'pending' | 'rejected';
+  approvedBy?: string;
+  createdBy: string;
+  expenseDate: string;
+  createdAt: string;
+  month: string;
+};
+
+export type ExpenseCategory = {
+  id: string;
+  name: string;
+};
+
+export type TimeFilter = 'today' | 'yesterday' | 'this-week' | 'this-month' | 'custom';
