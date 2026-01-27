@@ -185,3 +185,78 @@ export type ExpenseCategory = {
 };
 
 export type TimeFilter = 'today' | 'yesterday' | 'this-week' | 'this-month' | 'custom';
+
+export const loginAttempts = [
+            {
+              id: 'login-1',
+              email: 'admin@business.com',
+              device: 'Chrome on Windows',
+              location: 'Lagos, Nigeria',
+              time: '2024-01-15 10:30:00',
+              approvedBy: 'System',
+              status: 'approved' as const,
+            },
+            {
+              id: 'login-2',
+              email: 'manager@business.com',
+              device: 'Safari on iPhone',
+              location: 'Abuja, Nigeria',
+              time: '2024-01-15 09:15:00',
+              approvedBy: 'Admin',
+              status: 'approved' as const,
+            },
+            {
+              id: 'login-3',
+              email: 'sales@business.com',
+              device: 'Firefox on Windows',
+              location: 'Unknown',
+              time: '2024-01-15 08:45:00',
+              approvedBy: '-',
+              status: 'pending' as const,
+            },
+            {
+              id: 'login-4',
+              email: 'john.doe@business.com',
+              device: 'Chrome on Android',
+              location: 'Port Harcourt, Nigeria',
+              time: '2024-01-14 22:10:00',
+              approvedBy: 'System',
+              status: 'approved' as const,
+            },
+            {
+              id: 'login-5',
+              email: 'unknown@email.com',
+              device: 'Unknown',
+              location: 'Unknown',
+              time: '2024-01-14 03:45:00',
+              approvedBy: '-',
+              status: 'rejected' as const,
+            },
+            {
+              id: 'login-6',
+              email: 'inventory@business.com',
+              device: 'Edge on Windows',
+              location: 'Ibadan, Nigeria',
+              time: '2024-01-14 14:20:00',
+              approvedBy: 'Manager',
+              status: 'approved' as const,
+            },
+            {
+              id: 'login-7',
+              email: 'test@business.com',
+              device: 'Chrome on Mac',
+              location: 'Lagos, Nigeria',
+              time: '2024-01-13 11:05:00',
+              approvedBy: '-',
+              status: 'pending' as const,
+            },
+            {
+              id: 'login-8',
+              email: 'finance@business.com',
+              device: 'Safari on Mac',
+              location: 'Abuja, Nigeria',
+              time: '2024-01-13 09:30:00',
+              approvedBy: 'Admin',
+              status: 'approved' as const,
+            },
+          ]

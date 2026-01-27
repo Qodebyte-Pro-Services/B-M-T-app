@@ -139,6 +139,27 @@ const handleReject = (id: string) => {
   });
   const [selectedExpense, setSelectedExpense] = useState<Expense | null>(null);
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
+const [isEditCategoryDialogOpen, setIsEditCategoryDialogOpen] = useState(false);
+const [editingCategory, setEditingCategory] = useState<ExpenseCategory | null>(null);
+
+const handleOpenEditCategory = (category: ExpenseCategory) => {
+  setEditingCategory(category);
+  setIsEditCategoryDialogOpen(true);
+};
+
+const handleUpdateCategory = () => {
+  if (!editingCategory?.name.trim()) return;
+
+  setCategories(prev =>
+    prev.map(cat =>
+      cat.id === editingCategory.id ? editingCategory : cat
+    )
+  );
+
+  setIsEditCategoryDialogOpen(false);
+  setEditingCategory(null);
+};
+
 
 
   const filteredExpenses = useMemo(() => {
@@ -346,7 +367,7 @@ const chartData = useMemo(() => {
                   Add Expense
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-md">
+              <DialogContent className="max-w-md bg-gray-900 ">
                 <DialogHeader>
                   <DialogTitle>Add New Expense</DialogTitle>
                   <DialogDescription>Enter expense details</DialogDescription>
@@ -445,7 +466,7 @@ const chartData = useMemo(() => {
                 
                 <DialogFooter>
                   <Button variant="outline" onClick={() => setIsAddExpenseDialogOpen(false)}>Cancel</Button>
-                  <Button onClick={handleAddExpense} className="bg-gray-900 hover:bg-gray-800">Add Expense</Button>
+                  <Button onClick={handleAddExpense} className="bg-gray-100 hover:bg-gray-300">Add Expense</Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -559,12 +580,12 @@ const chartData = useMemo(() => {
 
              <KPICard
                 title="Discount"
-                value={kpis.totalDiscount.toString()}
+                value={`NGN ${kpis.totalDiscount.toString()}`}
                 icon={<DollarSign className="w-5 h-5" />}
               />
             <KPICard
                 title="Tax"
-                value={kpis.totalTax.toString()}
+                value={`NGN ${kpis.totalTax.toString()}`}
                 icon={<DollarSign className="w-5 h-5" />}
               />
 
@@ -696,7 +717,7 @@ const chartData = useMemo(() => {
                 <CardTitle>Expense Categories</CardTitle>
                 <Dialog  open={isAddCategoryDialogOpen} onOpenChange={setIsAddCategoryDialogOpen}>
                   <DialogTrigger asChild>
-                    <Button className="bg-gray-900 hover:bg-gray-800 text-white">
+                    <Button className="bg-gray-100 hover:bg-gray-300 text-gray-900">
                       <Plus className="w-4 h-4 mr-2" />
                       Add Category
                     </Button>
@@ -725,6 +746,49 @@ const chartData = useMemo(() => {
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
+                <Dialog
+              open={isEditCategoryDialogOpen}
+              onOpenChange={setIsEditCategoryDialogOpen}
+            >
+              <DialogContent className="max-w-md bg-gray-900">
+                <DialogHeader>
+                  <DialogTitle>Edit Category</DialogTitle>
+                  <DialogDescription>Update expense category name</DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-category-name">Category Name *</Label>
+                    <Input
+                      id="edit-category-name"
+                      value={editingCategory?.name || ''}
+                      onChange={(e) =>
+                        setEditingCategory(prev =>
+                          prev ? { ...prev, name: e.target.value } : prev
+                        )
+                      }
+                      placeholder="e.g., Office Supplies"
+                    />
+                  </div>
+                </div>
+
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsEditCategoryDialogOpen(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleUpdateCategory}
+                    className="bg-gray-100 hover:bg-gray-200 text-gray-900"
+                  >
+                    Save Changes
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
               </CardHeader>
               <CardContent>
                 <Table>
@@ -741,9 +805,13 @@ const chartData = useMemo(() => {
                         <TableCell className="font-mono text-sm">{category.id}</TableCell>
                         <TableCell className="font-medium">{category.name}</TableCell>
                         <TableCell className="text-right">
-                          <Button variant="ghost" size="sm">
-                            <Pencil className="w-4 h-4" />
-                          </Button>
+                         <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleOpenEditCategory(category)}
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </Button>
 
                         <Button variant="destructive" size="sm">
                             <Trash className="w-4 h-4" />

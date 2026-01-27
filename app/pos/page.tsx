@@ -2,17 +2,14 @@
 
 import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
-import { ShoppingCart, Clock, Wifi, WifiOff } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import {  Clock} from "lucide-react";
 import { CartItem, Customer, Draft, Product, ProductVariant } from '../utils/type';
-
 import { LoadDraftModal } from './components/LoadDraftModal';
 import { CreateCustomerModal } from './components/CreateCustomerModal';
 import { CartSidebar } from './components/CartSidebarProps';
 import { ProductGrid } from './components/ProductGridProps';
 import { ProductFilters } from './components/ProductFiltersProps';
 import { POSHeader } from './components/POSHeader';
-import { toast } from 'sonner';
 import { NetworkStatus } from './components/NetworkStatus';
 import { CheckoutModal } from './components/CheckoutModalProps';
 

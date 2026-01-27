@@ -15,7 +15,9 @@ import {
   Calendar,
   MoreVertical,
   Printer,
-  Trash2
+  Trash2,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 import { Transaction } from '@/app/utils/type';
 import { useState } from 'react';
@@ -33,7 +35,11 @@ interface TransactionsTabProps {
   transactions: Transaction[];
   paymentMethodFilter: string;
   onPaymentMethodFilterChange: (method: string) => void;
+
 }
+
+const ITEMS_PER_PAGE = 10;
+
 
 export function TransactionsTab({ 
   transactions, 
@@ -41,14 +47,39 @@ export function TransactionsTab({
   onPaymentMethodFilterChange 
 }: TransactionsTabProps) {
   const [searchQuery, setSearchQuery] = useState('');
+   const [currentPage, setCurrentPage] = useState(1);
   
   const filteredTransactions = transactions.filter(t => {
     const matchesSearch = !searchQuery || 
       t.customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       t.id.toLowerCase().includes(searchQuery.toLowerCase());
     
-    return matchesSearch;
+    const matchesPaymentMethod = paymentMethodFilter === 'all' || 
+      t.paymentMethod === paymentMethodFilter;
+    
+    return matchesSearch && matchesPaymentMethod;
   });
+
+    const totalPages = Math.ceil(filteredTransactions.length / ITEMS_PER_PAGE);
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const paginatedTransactions = filteredTransactions.slice(startIndex, endIndex);
+
+  const handleFilterChange = (filterValue: string) => {
+    setCurrentPage(1);
+    onPaymentMethodFilterChange(filterValue);
+  };
+
+  const handleClearFilters = () => {
+    setCurrentPage(1);
+    setSearchQuery('');
+    onPaymentMethodFilterChange('all');
+  };
+
+  const handleSearch = (query: string) => {
+    setCurrentPage(1);
+    setSearchQuery(query);
+  };
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -217,6 +248,8 @@ export function TransactionsTab({
     { value: 'split', label: 'Split' },
   ];
 
+  
+
   return (
     <Card className="bg-gray-900 text-white">
       <CardHeader>
@@ -303,12 +336,13 @@ export function TransactionsTab({
                   <TableHead>Payment Method</TableHead>
                   <TableHead>Discount</TableHead>
                   <TableHead>Amount</TableHead>
+                  <TableHead>Sale Made By</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredTransactions.map((transaction) => (
+                {paginatedTransactions.map((transaction) => (
                   <TableRow key={transaction.id}>
                     <TableCell className="font-mono text-sm">
                       {transaction.id}
@@ -334,6 +368,9 @@ export function TransactionsTab({
                     </TableCell>
                     <TableCell className="font-bold">
                       NGN {transaction.total.toFixed(2)}
+                    </TableCell>
+                    <TableCell>
+                      <p>Mgt</p>
                     </TableCell>
                     <TableCell>
                       <Badge 
@@ -369,6 +406,45 @@ export function TransactionsTab({
                 ))}
               </TableBody>
             </Table>
+          <div className="flex items-center justify-between p-4 border-t border-gray-700">
+              <div className="text-sm text-gray-400">
+                Showing {startIndex + 1} to {Math.min(endIndex, filteredTransactions.length)} of {filteredTransactions.length} transactions
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                    <Button
+                      key={page}
+                      variant={currentPage === page ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setCurrentPage(page)}
+                      className={currentPage === page ? 'bg-yellow-500 hover:bg-yellow-600 text-black' : ''}
+                    >
+                      {page}
+                    </Button>
+                  ))}
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
           </div>
         )}
         

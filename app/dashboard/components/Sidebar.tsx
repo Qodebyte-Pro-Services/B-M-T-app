@@ -8,7 +8,9 @@ import {
   Users, 
   Settings,
   LogOut,
-  X
+  X,
+  Subtitles,
+  Workflow,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -19,6 +21,7 @@ const navigation = [
   { name: "Sales", href: "/sales", icon: ShoppingCart },
   { name: "Expenses", href: "/expenses", icon: DollarSign },
   { name: "Customers", href: "/customers", icon: Users },
+  {name: "Staffs", href:"/staffs", icon: Workflow},
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 
