@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
-import {  Clock} from "lucide-react";
+import {Clock, User} from "lucide-react";
 import { CartItem, Customer, Draft, Product, ProductVariant } from '../utils/type';
 import { LoadDraftModal } from './components/LoadDraftModal';
 import { CreateCustomerModal } from './components/CreateCustomerModal';
@@ -14,6 +14,7 @@ import { NetworkStatus } from './components/NetworkStatus';
 import { CheckoutModal } from './components/CheckoutModalProps';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 
 
 
@@ -333,8 +334,12 @@ const calculateDiscount = () => {
                 <Clock className="h-4 w-4" />
                 Session: {formatTime(sessionTime)}
               </div>
-           <div  className="hidden items-center gap-2 ml-auto">
-              <Label htmlFor="taxRate" className="text-sm">Set Sale Tax Rate:</Label>
+           <div  className="flex items-center gap-2 ml-auto">
+              <Badge  className="bg-gray-900 text-green-400 px-2 py-1 rounded-md flex items-center gap-1">
+               <User className="h-4 w-4" />
+              Cashier : <span>Fred</span>
+              </Badge>
+              <Label htmlFor="taxRate" className="text-sm hidden">Set Sale Tax Rate:</Label>
               <Input
                 id="taxRate"
                 type="number"
@@ -343,9 +348,9 @@ const calculateDiscount = () => {
                 step="0.1"
                 value={taxRate}
                 onChange={(e) => handleTaxRateChange(parseFloat(e.target.value) || 0)}
-                className="w-16 h-8 text-center border border-gray-900"
+                className="w-16 h-8 text-center border border-gray-900 hidden"
               />
-              <span className="text-sm">%</span>
+              <span className="text-sm hidden">%</span>
             </div>
           </div>
             
