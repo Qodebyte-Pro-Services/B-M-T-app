@@ -46,6 +46,7 @@ const selectedVariantData: ProductVariant = product.hasVariations
       sellingPrice: 299.99,
       quantity: product.totalStock,
       threshold: 10,
+      barcode: '',
       images: [],
     };
 
