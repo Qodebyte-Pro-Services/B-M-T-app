@@ -1,141 +1,257 @@
 'use client';
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { 
-  Download, 
-  Filter, 
-  Search, 
-  User, 
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Download,
+  Filter,
+  Search,
+  User,
   Calendar,
   MoreVertical,
   Printer,
   Trash2,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  AlertCircle,
 } from "lucide-react";
-import { Transaction } from '@/app/utils/type';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from "react";
+import { getSales } from "@/app/lib/api";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-
-import ReactDOMServer from 'react-dom/server';
+import { Skeleton } from "@/components/ui/skeleton";
+import { CartItem, ReceiptTransaction, Sale } from "@/app/utils/type";
+import ReactDOMServer from "react-dom/server";
 import { Receipt } from "@/app/pos/components/Receipt";
 
+type DateRange = {
+  filter: string;
+  startDate?: string;
+  endDate?: string;
+};
+
+
+
 interface TransactionsTabProps {
-  transactions: Transaction[];
+  dateRange: DateRange;
   paymentMethodFilter: string;
   onPaymentMethodFilterChange: (method: string) => void;
-   highlightedTransactionId?: string;
+  highlightedTransactionId?: string;
 }
+
+
+
+interface OrderItemAPI {
+  id: string;
+  product_id: number;
+  variant_id: number;
+  product_name: string;
+  variant_name: string;
+  sku: string;
+  price: number | string;
+  quantity: number;
+  taxable: boolean;
+  image_url?: string;
+}
+
+interface InstallmentPlanAPI {
+  numberOfPayments: number;
+  amountPerPayment: number;
+  paymentFrequency: 'daily' | 'weekly' | 'monthly';
+  startDate: string;
+  notes: string;
+  downPayment: number;
+  remainingBalance: number;
+}
+
+interface OrderAPI {
+  id: string;
+  Customer: {
+    id: string;
+    name: string;
+    email?: string;
+    phone?: string;
+  };
+  OrderItems: OrderItemAPI[];
+  subtotal: number | string;
+  tax: number | string;
+  total_amount: number | string;
+  discount_total: number | string;
+  CreditAccount?: boolean;
+  InstallmentPlan?: InstallmentPlanAPI;
+  OrderPayment?: { method: string }[];
+  createdAt: string;
+}
+
+
 
 const ITEMS_PER_PAGE = 10;
 
+function mapSaleToReceipt(sale: Sale): ReceiptTransaction {
+  const items: CartItem[] = sale.OrderItems?.map(item => ({
+    id: item.id,
+    productId: Number(item.product_id),
+    variantId: Number(item.variant_id),
+    productName: item.Variant?.Product?.name ?? "Unknown", 
+    variantName: item.Variant?.sku ?? "Unknown",
+    sku: item.Variant?.sku ?? "",
+    price: Number(item.unit_price),
+    quantity: item.quantity,
+  })) ?? [];
 
-export function TransactionsTab({ 
-  transactions, 
+ 
+  let paymentMethod = "cash";
+  
+  if (sale.OrderPayments && sale.OrderPayments.length > 0) {
+    paymentMethod = sale.OrderPayments[0].method || "cash";
+  } else if (sale.CreditAccount) {
+    paymentMethod = "credit";
+  } else if (sale.InstallmentPlan) {
+    paymentMethod = "installment";
+  }
+
+  return {
+    id: sale.id,
+    customer: sale.Customer ?? { id: "unknown", name: "Unknown" },
+    items,
+    subtotal: Number(sale.subtotal),
+    tax: Number(sale.tax_total),
+    total: Number(sale.total_amount),
+    totalDiscount: Number(sale.discount_total),
+    paymentMethod,
+    amountPaid: Number(sale.total_amount),
+    change: 0,
+    timestamp: sale.createdAt,
+    purchaseType: sale.purchase_type as 'in-store' | 'online',
+  };
+}
+
+export function TransactionsTab({
+  dateRange,
   paymentMethodFilter,
-  onPaymentMethodFilterChange ,
+  onPaymentMethodFilterChange,
   highlightedTransactionId,
 }: TransactionsTabProps) {
-  const [searchQuery, setSearchQuery] = useState('');
-   const [currentPage, setCurrentPage] = useState(1);
-  
-  const filteredTransactions = transactions.filter(t => {
-    const matchesSearch = !searchQuery || 
-      t.customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      t.id.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesPaymentMethod = paymentMethodFilter === 'all' || 
-      t.paymentMethod === paymentMethodFilter;
-    
-    return matchesSearch && matchesPaymentMethod;
-  });
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
 
-    const totalPages = Math.ceil(filteredTransactions.length / ITEMS_PER_PAGE);
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-  const endIndex = startIndex + ITEMS_PER_PAGE;
-  const paginatedTransactions = filteredTransactions.slice(startIndex, endIndex);
-
+ 
   useEffect(() => {
-    if (highlightedTransactionId) {
-      const highlightedIndex = filteredTransactions.findIndex(t => t.id === highlightedTransactionId);
-      if (highlightedIndex !== -1) {
-        const pageNumber = Math.floor(highlightedIndex / ITEMS_PER_PAGE) + 1;
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setCurrentPage(pageNumber);
+    const fetchSales = async () => {
+      try {
+        setLoading(true);
+        const res = await getSales(dateRange.filter, currentPage, ITEMS_PER_PAGE);
+        setSales(res.sales);
+        setTotalPages(res.totalPages);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to fetch sales");
+      } finally {
+        setLoading(false);
       }
-    }
-  }, [highlightedTransactionId, filteredTransactions]);
-
-  const handleFilterChange = (filterValue: string) => {
-    setCurrentPage(1);
-    onPaymentMethodFilterChange(filterValue);
-  };
-
-  const handleClearFilters = () => {
-    setCurrentPage(1);
-    setSearchQuery('');
-    onPaymentMethodFilterChange('all');
-  };
-
-  const handleSearch = (query: string) => {
-    setCurrentPage(1);
-    setSearchQuery(query);
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  };
-
-  const getPaymentBadge = (method: string) => {
-    const variants: Record<string, { label: string, color: string }> = {
-      'cash': { label: 'Cash', color: 'bg-green-100 text-green-800' },
-      'card': { label: 'Card', color: 'bg-blue-100 text-blue-800' },
-      'transfer': { label: 'Transfer', color: 'bg-purple-100 text-purple-800' },
-      'credit': { label: 'Credit', color: 'bg-yellow-100 text-green-800' },
-      'installment': { label: 'Installment', color: 'bg-indigo-100 text-indigo-800' },
-      'split': { label: 'Split', color: 'bg-pink-100 text-pink-800' },
     };
-    
-    const variant = variants[method] || { label: method, color: 'bg-gray-100 text-gray-800' };
-    
-    return (
-      <Badge className={`${variant.color} hover:${variant.color}`}>
-        {variant.label}
-      </Badge>
-    );
-  };
 
- const handlePrintReceipt = (transaction: Transaction) => {
+    fetchSales();
+  }, [dateRange, currentPage]);
+
+ 
+  const filteredSales = useMemo(() => {
+    return sales.filter((sale) => {
+      const name = sale.Customer?.name ?? "";
+      const matchesSearch =
+        !searchQuery ||
+        name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        sale.id.toLowerCase().includes(searchQuery.toLowerCase());
+
+      const method = sale.CreditAccount
+        ? "credit"
+        : sale.InstallmentPlan
+        ? "installment"
+        : sale.OrderPayments?.[0]?.method ?? "cash";
+
+      const matchesMethod =
+        paymentMethodFilter === "all" || paymentMethodFilter === method;
+
+      return matchesSearch && matchesMethod;
+    });
+  }, [sales, searchQuery, paymentMethodFilter]);
+
+ 
+const summary = useMemo(() => {
+  const totalAmount = filteredSales.reduce(
+    (s, t) => s + Number(t.total_amount),
+    0
+  );
+
+  const totalDiscount = filteredSales.reduce(
+    (s, t) => s + Number(t.discount_total),
+    0
+  );
+
+  return {
+    count: filteredSales.length,
+    totalAmount,
+    avgTicket: filteredSales.length
+      ? totalAmount / filteredSales.length
+      : 0,
+    totalDiscount,
+  };
+}, [filteredSales]);
+
+
+
+
+const handlePrintReceipt = (receipt: ReceiptTransaction) => {
   const receiptHtml = ReactDOMServer.renderToString(
-    <Receipt
-      customer={transaction.customer}
-      cart={transaction.items}
-      subtotal={transaction.subtotal || transaction.total - transaction.tax}
-      tax={transaction.tax}
-      total={transaction.total}
-      paymentMethod={transaction.paymentMethod}
-      amountPaid={transaction.amountPaid || transaction.total}
-      change={(transaction.amountPaid || transaction.total) - transaction.total}
-      purchaseType={transaction.purchaseType || 'in-store'}
-      splitPayments={transaction.splitPayments?.map(sp => ({
-        method: sp.method,
-        amount: sp.amount.toString(),
+     <Receipt
+      customer={receipt.customer}
+      cart={receipt.items}
+      subtotal={receipt.subtotal}
+      discount={receipt.totalDiscount}
+      tax={receipt.tax}
+      total={receipt.total}
+      paymentMethod={receipt.paymentMethod}
+      amountPaid={receipt.amountPaid}
+      change={receipt.change}
+      purchaseType={receipt.purchaseType}
+      splitPayments={receipt.splitPayments?.map(p => ({
+        method: p.method,
+        amount: String(p.amount),
       }))}
-      installmentPlan={transaction.installmentPlan}
-      transactionId={transaction.id}
-      receiptDate={new Date(transaction.timestamp).toLocaleString()}
+      installmentPlan={receipt.installmentPlan}
+      transactionId={receipt.id}
+      receiptDate={new Date(receipt.timestamp).toLocaleString()}
     />
   );
 
@@ -146,7 +262,7 @@ export function TransactionsTab({
     <!DOCTYPE html>
     <html>
       <head>
-        <title>Receipt - ${transaction.id}</title>
+        <title>Receipt - ${receipt.id}</title>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <style>
@@ -244,284 +360,189 @@ export function TransactionsTab({
   printWindow.focus();
 };
 
-  const handleDeleteTransaction = (transactionId: string) => {
-    if (confirm('Are you sure you want to delete this transaction?')) {
-      console.log('Delete transaction:', transactionId);
-    }
-  };
 
-  const paymentMethods = [
-    { value: 'all', label: 'All Methods' },
-    { value: 'cash', label: 'Cash' },
-    { value: 'card', label: 'Card' },
-    { value: 'transfer', label: 'Transfer' },
-    { value: 'credit', label: 'Credit' },
-    { value: 'installment', label: 'Installment' },
-    { value: 'split', label: 'Split' },
-  ];
+  const paymentBadge = (method: string) => (
+    <Badge className="bg-gray-100 text-gray-800">{method}</Badge>
+  );
 
-  const creditTransactions = filteredTransactions.filter(t => t.paymentMethod === 'credit');
+  if (error) {
+    return (
+      <Card className="bg-gray-900 text-white">
+        <CardContent className="py-16 text-center text-red-500">
+          <AlertCircle className="mx-auto h-10 w-10 mb-2" />
+          {error}
+        </CardContent>
+      </Card>
+    );
+  }
 
-
-  
-
+ 
   return (
     <Card className="bg-gray-900 text-white">
       <CardHeader>
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <CardTitle>Transaction History</CardTitle>
-            <CardDescription>
-              {filteredTransactions.length} transactions found
-            </CardDescription>
-          </div>
-          
-          <div className="flex items-center gap-3">
-            <Button variant="outline">
-              <Download className="h-4 w-4 mr-2" />
-              Export
-            </Button>
-          </div>
-        </div>
+        <CardTitle>Transaction History</CardTitle>
+        <CardDescription>
+          {loading ? "Loading…" : `${summary.count} transactions`}
+        </CardDescription>
       </CardHeader>
-      
-      <CardContent>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="search">Search Transactions</Label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                id="search"
-                placeholder="Search by customer or ID"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
-            </div>
+      <CardContent>
+      
+        <div className="grid md:grid-cols-3 gap-4 mb-6">
+          <div className="flex flex-col gap-2"> 
+            <Label>Search</Label>
+            <Input
+              placeholder="Customer or ID"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
           </div>
-          
+
           <div className="flex flex-col gap-2">
-            <Label htmlFor="paymentMethod">Payment Method</Label>
-            <Select value={paymentMethodFilter} onValueChange={onPaymentMethodFilterChange}>
+            <Label>Payment Method</Label>
+            <Select
+              value={paymentMethodFilter}
+              onValueChange={onPaymentMethodFilterChange}
+            >
               <SelectTrigger>
-                <SelectValue placeholder="Filter by payment method" />
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {paymentMethods.map(method => (
-                  <SelectItem key={method.value} value={method.value}>
-                    {method.label}
-                  </SelectItem>
-                ))}
+                {["all", "cash", "card", "transfer", "credit", "installment"].map(
+                  (m) => (
+                    <SelectItem key={m} value={m}>
+                      {m}
+                    </SelectItem>
+                  )
+                )}
               </SelectContent>
             </Select>
           </div>
-          
-          <div className="flex items-end">
-            <Button 
-              variant="outline" 
-              className="w-full"
-              onClick={() => {
-                setSearchQuery('');
-                onPaymentMethodFilterChange('all');
-              }}
+
+          <Button variant="outline" onClick={() => setSearchQuery("")}>
+            <Filter className="h-4 w-4 mr-2" /> Clear
+          </Button>
+        </div>
+
+        
+        {loading ? (
+          <Skeleton className="h-40 w-full" />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>ID</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead>Customer</TableHead>
+                <TableHead>Payment</TableHead>
+                <TableHead>Amount</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+
+            <TableBody>
+              {filteredSales.map((sale) => (
+                <TableRow
+                  key={sale.id}
+                  className={
+                    highlightedTransactionId === sale.id
+                      ? "bg-yellow-50/10"
+                      : ""
+                  }
+                >
+                  <TableCell>{sale.id}</TableCell>
+                  <TableCell>
+                    {new Date(sale.createdAt).toLocaleString()}
+                  </TableCell>
+                  <TableCell>{sale.Customer?.name ?? "Unknown"}</TableCell>
+                 <TableCell>
+                {paymentBadge(
+                  sale.OrderPayments && sale.OrderPayments.length > 0
+                    ? sale.OrderPayments[0].method
+                    : sale.CreditAccount
+                    ? "credit"
+                    : sale.InstallmentPlan
+                    ? "installment"
+                    : "cash"
+                )}
+              </TableCell>
+                <TableCell className="font-bold">
+  NGN {Number(sale.total_amount).toFixed(2)}
+</TableCell>
+
+                  <TableCell>{sale.status}</TableCell>
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="sm">
+                          <MoreVertical className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+onClick={() => {
+  const receipt = mapSaleToReceipt(sale);
+  handlePrintReceipt(receipt);
+}}
+
+                    >
+                      <Printer className="h-4 w-4 mr-2" />
+                      View Receipt
+                    </DropdownMenuItem>
+                        <DropdownMenuItem className="text-red-600">
+                          <Trash2 className="h-4 w-4 mr-2" /> Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+
+      
+        <div className="flex justify-between items-center mt-4">
+          <span className="text-sm text-gray-400">
+            Page {currentPage} of {totalPages}
+          </span>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage((p) => p - 1)}
             >
-              <Filter className="h-4 w-4 mr-2" />
-              Clear Filters
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={currentPage === totalPages}
+              onClick={() => setCurrentPage((p) => p + 1)}
+            >
+              <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
         </div>
-        
-        
-        {filteredTransactions.length === 0 ? (
-          <div className="text-center py-12 text-gray-500">
-            <Calendar className="h-12 w-12 mx-auto text-gray-300 mb-3" />
-            <p>No transactions found</p>
-            <p className="text-sm mt-1">Try adjusting your filters</p>
-          </div>
-        ) : (
-          <div className="rounded-md border">
-            <Table className="bg-gray-900">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Invoice No</TableHead>
-                  <TableHead>Date & Time</TableHead>
-                  <TableHead>Customer</TableHead>
-                  <TableHead>Payment Method</TableHead>
-                  <TableHead>Discount</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Sale Made By</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Credit Status</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {paginatedTransactions.map((transaction) => (
-                 <TableRow 
-                    key={transaction.id}
-                    className={highlightedTransactionId === transaction.id ? 'bg-yellow-50 bg-opacity-10' : ''}
-                  >
-                    <TableCell className="font-mono text-sm">
-                      {transaction.id}
-                    </TableCell>
-                    <TableCell className="font-medium">
-                      {formatDate(transaction.timestamp)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <User className="h-4 w-4 text-gray-400" />
-                        {transaction.customer.name}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {getPaymentBadge(transaction.paymentMethod)}
-                    </TableCell>
-                 <TableCell>
-  {transaction.totalDiscount ? (  
-    <span className="text-red-600">- NGN {transaction.totalDiscount.toFixed(2)}</span>
-  ) : (
-    <span className="text-gray-500">None</span>
-  )}
-</TableCell>
-                    <TableCell className="font-bold">
-                      NGN {transaction.total.toFixed(2)}
-                    </TableCell>
-                    <TableCell>
-                      <p>Mgt</p>
-                    </TableCell>
-                    <TableCell>
-                      <Badge 
-                        variant={transaction.synced ? "default" : "destructive"}
-                        className={transaction.synced ? 'bg-green-100 text-green-800 hover:bg-green-100' : ''}
-                      >
-                        {transaction.synced ? 'Synced' : 'Unsynced'}
-                      </Badge>
-                    </TableCell>
-                     <TableCell>
-                    {transaction.paymentMethod === 'credit' && (
-                     
-                        <div className="space-y-1">
-                          <Badge className="bg-blue-600 text-white block">
-                            Credit (Waived)
-                          </Badge>
-                          {transaction.credit?.creditType === 'partial' && (
-                            <Badge className="bg-amber-600 text-white text-xs">
-                              Partial: NGN {transaction.credit.amountPaidTowardCredit.toFixed(2)}
-                            </Badge>
-                          )}
-                          <div className="text-xs text-gray-500 mt-1">
-                            Balance: NGN {transaction.credit?.creditBalance.toFixed(2)}
-                          </div>
-                        </div>
-                     
-                    )}
-                     </TableCell>
-                    <TableCell className="text-right">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="sm">
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => handlePrintReceipt(transaction)}>
-                            <Printer className="h-4 w-4 mr-2" />
-                            View Receipt
-                          </DropdownMenuItem>
-                          <DropdownMenuItem 
-                            className="text-red-600"
-                            onClick={() => handleDeleteTransaction(transaction.id)}
-                          >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          <div className="flex items-center justify-between p-4 border-t border-gray-700">
-              <div className="text-sm text-gray-400">
-                Showing {startIndex + 1} to {Math.min(endIndex, filteredTransactions.length)} of {filteredTransactions.length} transactions
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
 
-                <div className="flex items-center gap-1">
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                    <Button
-                      key={page}
-                      variant={currentPage === page ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setCurrentPage(page)}
-                      className={currentPage === page ? 'bg-green-400 hover:bg-green-500 text-black' : ''}
-                    >
-                      {page}
-                    </Button>
-                  ))}
-                </div>
-
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage === totalPages}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-        
-    
-        {filteredTransactions.length > 0 && (
-          <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
-            <Card className="bg-white text-gray-900 border border-gray-100 shadow-2xl">
-              <CardContent className="p-4">
-                <div className="text-sm text-gray-500">Total Transactions</div>
-                <div className="text-xl font-bold">{filteredTransactions.length}</div>
-              </CardContent>
-            </Card>
-            
-            <Card className="bg-white text-gray-900 border border-gray-100 shadow-2xl">
-              <CardContent className="p-4">
-                <div className="text-sm text-gray-500">Total Amount</div>
-                <div className="text-xl font-bold">
-                  NGN {filteredTransactions.reduce((sum, t) => sum + t.total, 0).toFixed(2)}
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card className="bg-white text-gray-900 border border-gray-100 shadow-2xl">
-              <CardContent className="p-4">
-                <div className="text-sm text-gray-500">Average Ticket</div>
-                <div className="text-xl font-bold">
-                  NGN {(filteredTransactions.reduce((sum, t) => sum + t.total, 0) / filteredTransactions.length).toFixed(2)}
-                </div>
-              </CardContent>
-            </Card>
-            
-            <Card className="bg-white text-gray-900 border border-gray-100 shadow-2xl">
-              <CardContent className="p-4">
-                <div className="text-sm text-gray-500">Total Discount</div>
-                <div className="text-xl font-bold text-red-600">
-                  NGN {filteredTransactions.reduce((sum, t) => sum + (t.totalDiscount || 0), 0).toFixed(2)}
-                </div>
-              </CardContent>
-            </Card>
+     
+        {summary.count > 0 && (
+          <div className="grid md:grid-cols-4 gap-4 mt-6">
+            {[
+              ["Transactions", summary.count],
+              ["Total Amount", `NGN ${summary.totalAmount.toFixed(2)}`],
+              ["Avg Ticket", `NGN ${summary.avgTicket.toFixed(2)}`],
+              ["Discount", `NGN ${summary.totalDiscount.toFixed(2)}`],
+            ].map(([label, value]) => (
+              <Card key={label} className="bg-white text-gray-900">
+                <CardContent className="p-4">
+                  <div className="text-sm text-gray-500">{label}</div>
+                  <div className="text-xl font-bold">{value}</div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         )}
       </CardContent>

@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Customer } from '@/app/utils/type';
+import { useCustomers } from './useCustomers';
+import { toast } from 'sonner';
 
 interface CreateCustomerModalProps {
   open: boolean;
@@ -21,33 +23,71 @@ interface CreateCustomerModalProps {
 }
 
 export function CreateCustomerModal({ open, onOpenChange, onCustomerCreated }: CreateCustomerModalProps) {
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    phone: '',
-  });
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const { addCustomer } = useCustomers();
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    const newCustomer = {
-      id: `cust-${Date.now()}`,
-      name: formData.name,
-      email: formData.email,
-      phone: formData.phone,
-    };
-    
-  
-    const customers = JSON.parse(localStorage.getItem('pos_customers') || '[]');
-    customers.push(newCustomer);
-    localStorage.setItem('pos_customers', JSON.stringify(customers));
-    
-    onCustomerCreated(newCustomer);
-    setFormData({ name: '', email: '', phone: '' });
+
+    // Validation
+    if (!name.trim()) {
+      toast.error('Customer name is required');
+      return;
+    }
+
+    if (email && !isValidEmail(email)) {
+      toast.error('Please enter a valid email address');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const newCustomer = await addCustomer({
+        name: name.trim(),
+        email: email.trim() || undefined,
+        phone: phone.trim() || undefined,
+      });
+
+      if (newCustomer) {
+        toast.success(`Customer "${name}" created successfully`);
+        onCustomerCreated(newCustomer);
+        
+        // Reset form
+        setName('');
+        setEmail('');
+        setPhone('');
+        onOpenChange(false);
+      } else {
+        toast.error('Failed to create customer');
+      }
+    } catch (error) {
+      console.error('Error creating customer:', error);
+      toast.error('An error occurred while creating the customer');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
+  const isValidEmail = (email: string): boolean => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
+  const handleOpenChange = (newOpen: boolean) => {
+    if (!newOpen) {
+      setName('');
+      setEmail('');
+      setPhone('');
+    }
+    onOpenChange(newOpen);
+  };
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[425px] bg-gray-900 text-white">
         <DialogHeader>
           <DialogTitle>Add New Customer</DialogTitle>
@@ -61,8 +101,8 @@ export function CreateCustomerModal({ open, onOpenChange, onCustomerCreated }: C
             <Label htmlFor="name">Full Name *</Label>
             <Input
               id="name"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
               required
             />
           </div>
@@ -72,8 +112,8 @@ export function CreateCustomerModal({ open, onOpenChange, onCustomerCreated }: C
             <Input
               id="email"
               type="email"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
             />
           </div>
           
@@ -82,13 +122,13 @@ export function CreateCustomerModal({ open, onOpenChange, onCustomerCreated }: C
             <Input
               id="phone"
               type="tel"
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
             />
           </div>
           
           <DialogFooter>
-            <Button variant="outline" type="button" onClick={() => onOpenChange(false)}>
+            <Button variant="outline" type="button" onClick={() => handleOpenChange(false)}>
               Cancel
             </Button>
             <Button type="submit" className="bg-black hover:bg-gray-800 text-white">

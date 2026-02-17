@@ -1,6 +1,5 @@
 'use client';
-import React from 'react';
-import { Transaction } from '@/app/utils/type';
+import React, { useState, useEffect } from 'react';
 import {
   LineChart,
   Line,
@@ -11,7 +10,8 @@ import {
   ResponsiveContainer,
   Legend
 } from 'recharts';
-import { SalesChartTooltip } from './Omo'; // your tooltip component
+import { getSalesOvertime } from '@/app/lib/api';
+import { SalesChartTooltip } from './Omo';
 
 type DateRange = {
   filter: string;
@@ -19,86 +19,85 @@ type DateRange = {
   endDate: string;
 };
 
-interface SalesChartProps {
-  transactions: Transaction[];
-  dateRange: DateRange;
-}
-
 interface ChartDataItem {
   time: string;
   amount: number;
   count: number;
 }
 
-export function SalesChart({ transactions, dateRange }: SalesChartProps) {
-  const chartData: ChartDataItem[] = React.useMemo(() => {
-    const data: ChartDataItem[] = [];
+interface SalesOvertimeResponse {
+  success: boolean;
+  chart_data?: ChartDataItem[];
+  summary?: {
+    total_transactions: number;
+    total_sales_amount: number;
+    total_tax: number;
+    total_discount: number;
+    average_transaction_value: number;
+    average_hourly_transactions: number;
+    average_hourly_revenue: number;
+    peak_time: {
+      time: string;
+      amount: number;
+      count: number;
+    } | null;
+  };
+}
 
-    if (transactions.length === 0) return data;
+export function SalesChart({ dateRange }: { dateRange: DateRange }) {
+  const [chartData, setChartData] = useState<ChartDataItem[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-    const now = new Date();
+  useEffect(() => {
+    const fetchSalesData = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        
+        const response = await getSalesOvertime(
+          dateRange.filter,
+          dateRange.filter === 'custom' ? dateRange.startDate : undefined,
+          dateRange.filter === 'custom' ? dateRange.endDate : undefined
+        ) as SalesOvertimeResponse;
 
-    if (dateRange.filter === 'today' || dateRange.filter === 'yesterday') {
-   
-      const baseDate = dateRange.filter === 'today' ? now : new Date(now.setDate(now.getDate() - 1));
-      for (let hour = 0; hour < 24; hour++) {
-        const hourTransactions = transactions.filter(t => new Date(t.timestamp).getHours() === hour);
-        const total = hourTransactions.reduce((sum, t) => sum + t.total, 0);
-        data.push({
-          time: `${hour.toString().padStart(2, '0')}:00`,
-          amount: total,
-          count: hourTransactions.length,
-        });
-      }
-    } else if (dateRange.filter === 'thisWeek') {
-      const startOfWeek = new Date(now);
-      startOfWeek.setDate(now.getDate() - now.getDay());
-      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-      days.forEach((day, i) => {
-        const date = new Date(startOfWeek);
-        date.setDate(startOfWeek.getDate() + i);
-        const dayStr = date.toISOString().split('T')[0];
-        const dayTransactions = transactions.filter(t => new Date(t.timestamp).toISOString().split('T')[0] === dayStr);
-        const total = dayTransactions.reduce((sum, t) => sum + t.total, 0);
-        data.push({ time: day, amount: total, count: dayTransactions.length });
-      });
-    } else if (dateRange.filter === 'thisMonth') {
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-      for (let i = 1; i <= daysInMonth; i++) {
-        const date = new Date(startOfMonth);
-        date.setDate(i);
-        const dateStr = date.toISOString().split('T')[0];
-        const dayTransactions = transactions.filter(t => new Date(t.timestamp).toISOString().split('T')[0] === dateStr);
-        const total = dayTransactions.reduce((sum, t) => sum + t.total, 0);
-        data.push({ time: dateStr, amount: total, count: dayTransactions.length });
-      }
-    } else if (dateRange.filter === 'thisYear') {
-      const startOfYear = new Date(now.getFullYear(), 0, 1);
-      const monthsInYear = 12;
-      for (let i = 0; i < monthsInYear; i++) {
-        const date = new Date(startOfYear);
-        date.setMonth(i);
-        const monthStr = date.toISOString().split('T')[0];
-        const monthTransactions = transactions.filter(t => new Date(t.timestamp).toISOString().split('T')[0].startsWith(monthStr));
-        const total = monthTransactions.reduce((sum, t) => sum + t.total, 0);
-        data.push({ time: monthStr, amount: total, count: monthTransactions.length });
-      }
-    } else if (dateRange.filter === 'custom') {
-      const startDate = new Date(dateRange.startDate);
-      const endDate = new Date(dateRange.endDate);
-      const dayCount = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 3600 * 24)) + 1;
-        for (let i = 0; i < dayCount; i++) {
-            const date = new Date(startDate);
-            date.setDate(startDate.getDate() + i);
-            const dateStr = date.toISOString().split('T')[0];
-            const dayTransactions = transactions.filter(t => new Date(t.timestamp).toISOString().split('T')[0] === dateStr);
-            const total = dayTransactions.reduce((sum, t) => sum + t.total, 0);
-            data.push({ time: dateStr, amount: total, count: dayTransactions.length });
+        if (response.success && response.chart_data && Array.isArray(response.chart_data)) {
+          const formattedData: ChartDataItem[] = response.chart_data.map((item) => ({
+            time: item.time || '',
+            amount: item.amount || 0,
+            count: item.count || 0
+          }));
+          setChartData(formattedData);
+        } else {
+          setChartData([]);
         }
-    }
-    return data;
-  }, [transactions, dateRange]);
+      } catch (err) {
+        console.error('Failed to fetch sales overtime data:', err);
+        setError(err instanceof Error ? err.message : 'Failed to fetch chart data');
+        setChartData([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchSalesData();
+  }, [dateRange]);
+
+  if (isLoading) {
+    return (
+      <div className="h-80 flex items-center justify-center">
+        <p className="text-gray-600">Loading chart data...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="h-80 flex items-center justify-center">
+        <p className="text-red-600">Error loading chart data: {error}</p>
+      </div>
+    );
+  }
 
   return (
     <div className="h-80">

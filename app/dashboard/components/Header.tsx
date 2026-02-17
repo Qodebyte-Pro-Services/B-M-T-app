@@ -1,16 +1,57 @@
 'use client';
-import { BadgeCent, Bell, Menu, Search } from "lucide-react";
-import { Input } from "@/components/ui/input";
+import { BadgeCent, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
 import Link from "next/link";
+import { AdminDetail } from "@/app/utils/type";
+import { useEffect, useState } from "react";
 
 interface HeaderProps {
   onMenuClick: () => void;
 }
 
+
+
 export function Header({ onMenuClick }: HeaderProps) {
-  const [notifications] = useState(3);
+
+   const [adminDetail, setAdminDetail] = useState<AdminDetail | null>(null);
+    const [initials, setInitials] = useState('AD');
+
+      const getInitials = (fullName?: string) => {
+    if (!fullName) return 'AD';
+    
+    const names = fullName.trim().split(/\s+/);
+    if (names.length >= 2) {
+      return (names[0][0] + names[names.length - 1][0]).toUpperCase();
+    }
+    return fullName.substring(0, 2).toUpperCase();
+  };
+
+ 
+  const getNames = (fullName?: string) => {
+    if (!fullName) return { firstName: 'Admin', lastName: 'User' };
+    
+    const names = fullName.trim().split(/\s+/);
+    return {
+      firstName: names[0],
+      lastName: names.length > 1 ? names[names.length - 1] : '',
+    };
+  };
+
+    useEffect(() => {
+      const adminDetailStr = localStorage.getItem('adminDetail');
+      if (adminDetailStr) {
+        try {
+          const detail: AdminDetail = JSON.parse(adminDetailStr);
+          // eslint-disable-next-line react-hooks/set-state-in-effect
+          setAdminDetail(detail);
+          setInitials(getInitials(detail.full_name));
+        } catch (error) {
+          console.error('Failed to parse admin detail:', error);
+        }
+      }
+    }, []);
+
+    const names = getNames(adminDetail?.full_name);
 
   return (
     <header className="sticky top-0 z-40 bg-gray-900 backdrop-blur-sm border-b border-gray-800">
@@ -29,11 +70,11 @@ export function Header({ onMenuClick }: HeaderProps) {
             <div className="relative">
              <Link href="/dashboard" className="flex items-center gap-3">
           <div className="h-8 w-8 bg-green-400 rounded-lg flex items-center justify-center">
-            <span className="text-black font-bold text-sm">BMT</span>
+            <span className="text-black font-bold text-sm">PL</span>
           </div>
           <div>
-            <div className="font-bold text-white text-lg">Big Men</div>
-            <div className="text-xs text-gray-400 -mt-1">Transaction Apparel</div>
+            <div className="font-bold text-white text-lg">Prime</div>
+            <div className="text-xs text-gray-400 -mt-1">Labs</div>
           </div>
         </Link>
             </div>
@@ -64,11 +105,11 @@ export function Header({ onMenuClick }: HeaderProps) {
           
           <div className="hidden md:flex items-center gap-3 px-3 py-2 rounded-lg bg-gray-800">
             <div className="h-8 w-8 rounded-full bg-green-400/10 flex items-center justify-center">
-              <span className="text-green-400 font-bold text-sm">AD</span>
+             <span className="text-green-400 font-bold text-sm">{initials}</span>
             </div>
             <div>
-              <div className="text-sm font-medium text-white">Admin Dashboard</div>
-              <div className="text-xs text-gray-400">Executive View</div>
+              <div className="text-sm font-medium text-white">{names.firstName} {names.lastName}</div>
+              <div className="text-xs text-gray-400"> {adminDetail?.role || 'Administrator'}</div>
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Card, CardContent} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,10 +8,11 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
-import { Trash2, Plus, Minus, UserPlus, FileText, CreditCard, ShoppingCart } from "lucide-react";
+import { Trash2, Plus, Minus, UserPlus, FileText, CreditCard, ShoppingCart, Loader2 } from "lucide-react";
 import Image from 'next/image';
 import { CartItem, Customer } from '@/app/utils/type';
 import { Switch } from '@/components/ui/switch';
+import { useCustomers } from './useCustomers';
 
 interface CartSidebarProps {
   cart: CartItem[];
@@ -31,6 +32,17 @@ interface CartSidebarProps {
   onPurchaseTypeChange: (type: 'in-store' | 'online') => void;
    itemDiscountToggles?: Record<string, boolean>;
   onDiscountToggle?: (itemId: string) => void;
+  discountMode: 'auto' | 'manual';
+onDiscountModeChange: (mode: 'auto' | 'manual') => void;
+
+manualDiscount: {
+  type: 'fixed_amount' | 'percentage';
+  value: number;
+};
+onManualDiscountChange: (data: {
+  type: 'fixed_amount' | 'percentage';
+  value: number;
+}) => void;
 }
 
 export function CartSidebar({
@@ -51,18 +63,43 @@ export function CartSidebar({
   onPurchaseTypeChange,
   itemDiscountToggles = {},
   onDiscountToggle,
+  discountMode,
+  onDiscountModeChange,
+  manualDiscount,
+  onManualDiscountChange,
 }: CartSidebarProps) {
 
 
  
-  const customers = [
-    { id: 'walk-in', name: 'Walk-in Customer' },
-    { id: 'cust-1', name: 'John Doe', email: 'john@example.com', phone: '+1234567890' },
-    { id: 'cust-2', name: 'Jane Smith', email: 'jane@example.com', phone: '+0987654321' },
-    { id: 'cust-3', name: 'Robert Johnson', email: 'robert@example.com', phone: '+1122334455' },
-  ];
+   const { customers, loading: customersLoading } = useCustomers();
+  const isWalkInCustomer = selectedCustomer.is_walk_in === true || selectedCustomer.id === 'walk-in' || selectedCustomer.id === 'walk-in-temp';
 
+  // Find the real walk-in customer from the database by is_walk_in flag first, then by name
+  const dbWalkInCustomer = customers.find(c => 
+    c.is_walk_in === true || c.name?.toLowerCase() === 'walk-in'
+  );
 
+  // Use the database walk-in customer if it exists, otherwise use a dummy one
+  const walkInCustomerForDisplay = useMemo(() => 
+    dbWalkInCustomer 
+      ? { ...dbWalkInCustomer, is_walk_in: true } 
+      : { id: 'walk-in-temp', name: 'Walk-in', is_walk_in: true }
+  , [dbWalkInCustomer]);
+
+  // Build customer list: real walk-in (if available) + other non-walk-in customers only
+  const allCustomers: Customer[] = useMemo(() => {
+    const nonWalkInCustomers = customers.filter(c => 
+      c.is_walk_in !== true && c.id !== 'walk-in' && c.id !== 'walk-in-temp' && c.name?.toLowerCase() !== 'walk-in'
+    );
+    return [walkInCustomerForDisplay, ...nonWalkInCustomers];
+  }, [walkInCustomerForDisplay, customers]);
+
+  useEffect(() => {
+    if (!isWalkInCustomer && !customers.some(c => String(c.id) === String(selectedCustomer.id))) {
+      // Reset to walk-in customer if current customer is not in the customer list
+      onCustomerChange(walkInCustomerForDisplay);
+    }
+  }, [customers, selectedCustomer.id, onCustomerChange, isWalkInCustomer, walkInCustomerForDisplay]);
 
 const handleToggleDiscount = (itemId: string) => {
   if (onDiscountToggle) {
@@ -77,9 +114,9 @@ const getItemDiscount = (item: CartItem) => {
   if (!itemDiscountToggles[item.id] || discount.status === 'expired') return 0;
 
   if (discount.type === 'percentage') {
-    return (item.price * item.quantity * discount.value) / 100;
+    return (item.price * item.quantity * discount.percentage!) / 100;
   } else {
-    return Math.min(discount.value, item.price * item.quantity);
+    return Math.min(discount.fixed_amount!, item.price * item.quantity);
   }
 };
 
@@ -97,6 +134,29 @@ const finalTotal = Math.max(0, total - totalDiscount);
     sessionStorage.setItem('currentDiscount', JSON.stringify(discountData));
     onCheckout();
   };
+
+  const getImageUrl = (imagePath?: string): string => {
+  if (!imagePath) return '';
+
+
+  if (imagePath.startsWith('http')) return imagePath;
+
+  const baseUrl =
+    process.env.NEXT_PUBLIC_IMAGE_BASE_URL || 'https://api.bmtpossystem.com';
+
+  return imagePath.startsWith('/')
+    ? `${baseUrl}${imagePath}`
+    : `${baseUrl}/${imagePath}`;
+};
+
+
+
+ const getTaxableAmount = (item: CartItem): number => {
+    return item.taxable ? item.price * item.quantity : 0;
+  };
+
+  
+  const hasCustomerDetails = !isWalkInCustomer && (selectedCustomer.email || selectedCustomer.phone);
 
 
   return (
@@ -122,36 +182,79 @@ const finalTotal = Math.max(0, total - totalDiscount);
               variant="secondary"
               size="sm"
               className="h-8 text-xs"
-              onClick={onCreateCustomer}
+             onClick={onCreateCustomer}
+              disabled={customersLoading}
             >
               <UserPlus className="h-3 w-3 mr-1" />
               New Customer
             </Button>
           </div>
           
-          <Select
-            value={selectedCustomer.id}
+           <Select
+            value={String(selectedCustomer.id)}
             onValueChange={(value) => {
-              const customer = customers.find(c => c.id === value);
+              const customer = allCustomers.find(c => String(c.id) === value);
+              console.log('Selected customer:', customer); // Debug
               if (customer) onCustomerChange(customer);
             }}
+            disabled={customersLoading}
           >
             <SelectTrigger className='border border-gray-900'>
-              <SelectValue placeholder="Select customer" className='border border-gray-900' />
+              <SelectValue placeholder={customersLoading ? "Loading customers..." : "Select customer"} />
             </SelectTrigger>
             <SelectContent>
-              {customers.map(customer => (
-                <SelectItem key={customer.id} value={customer.id}>
+              {allCustomers.map(customer => (
+                <SelectItem key={customer.id} value={String(customer.id)}>
                   {customer.name}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
           
-          {selectedCustomer.id !== 'walk-in' && (
-            <div className="text-sm text-gray-600">
-              <div>{selectedCustomer.email}</div>
-              <div>{selectedCustomer.phone}</div>
+          {!isWalkInCustomer && (
+            <div className="space-y-2">
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Badge className="bg-blue-600 text-white">Customer Details</Badge>
+                </div>
+                
+                {selectedCustomer.email ? (
+                  <div className="flex items-center gap-2 text-sm text-gray-700 mb-1">
+                    <span className="text-lg">📧</span>
+                    <span className="truncate font-medium">{selectedCustomer.email}</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-sm text-gray-400 mb-1">
+                    <span className="text-lg">📧</span>
+                    <span>No email provided</span>
+                  </div>
+                )}
+
+                {selectedCustomer.phone ? (
+                  <div className="flex items-center gap-2 text-sm text-gray-700">
+                    <span className="text-lg">📱</span>
+                    <span className="truncate font-medium">{selectedCustomer.phone}</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-sm text-gray-400">
+                    <span className="text-lg">📱</span>
+                    <span>No phone provided</span>
+                  </div>
+                )}
+              </div>
+
+              {!hasCustomerDetails && (
+                <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded border border-amber-200">
+                  ⚠️ This customer has no contact information
+                </div>
+              )}
+            </div>
+          )}
+
+          {customersLoading && (
+            <div className="flex items-center justify-center py-2 text-gray-500">
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              <span className="text-xs">Loading customers...</span>
             </div>
           )}
         </div>
@@ -189,14 +292,16 @@ const finalTotal = Math.max(0, total - totalDiscount);
             </div>
           ) : (
             <div className="space-y-3">
-              {cart.map((item) => (
-                <Card key={item.id} className="overflow-hidden text-gray-900 bg-white border-gray-100 border shadow-sm">
+              {cart.map((item) => {
+                  const imageUrl = getImageUrl(item.image);
+                   return (
+                      <Card key={item.id} className="overflow-hidden text-gray-900 bg-white border-gray-100 border shadow-sm">
                   <CardContent className="p-4">
                     <div className="flex gap-3">
                     
                       <div className="flex-shrink-0">
                         <div className="h-16 w-16 rounded-md overflow-hidden bg-gray-100">
-                          {item.image ? (
+                          {item.image && imageUrl ? (
                             <Image
                               src={item.image}
                               width={100}
@@ -222,9 +327,7 @@ const finalTotal = Math.max(0, total - totalDiscount);
                             <p className="text-sm text-gray-600 truncate">
                               {item.variantName}
                             </p>
-                            <p className="text-xs text-gray-500 truncate">
-                              SKU: {item.sku}
-                            </p>
+                           
                           </div>
                           
                           <Button
@@ -288,7 +391,8 @@ const finalTotal = Math.max(0, total - totalDiscount);
                     </div>
                   </CardContent>
                 </Card>
-              ))}
+                   )
+              })}
             </div>
           )}
         </div>
@@ -306,9 +410,27 @@ const finalTotal = Math.max(0, total - totalDiscount);
           </div>
           
           <div className="flex justify-between text-sm">
-            <span className="text-gray-600">Tax ({taxRate}%)</span>
+          <span className="text-gray-600">
+              Tax ({taxRate}%)
+              <span className="text-xs text-gray-500 ml-1">
+                (On taxable items only)
+              </span>
+            </span>
             <span className="font-medium">NGN {tax.toFixed(2)}</span>
           </div>
+
+          {cart.length > 0 && (
+            <div className="text-xs text-gray-500 bg-gray-50 p-2 rounded">
+              <div className="flex justify-between mb-1">
+                <span>Taxable Items:</span>
+                <span>{cart.filter(item => item.taxable).length} of {cart.length}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Taxable Amount:</span>
+                <span>NGN {cart.filter(item => item.taxable).reduce((sum, item) => sum + getTaxableAmount(item), 0).toFixed(2)}</span>
+              </div>
+            </div>
+          )}
           
          {totalDiscount > 0 && (
   <div className="flex justify-between text-sm">
@@ -318,9 +440,75 @@ const finalTotal = Math.max(0, total - totalDiscount);
 )}
           
           <Separator />
+
+
+          <div className="space-y-2">
+  <Label>Discount Mode</Label>
+
+  <div className="grid grid-cols-2 gap-2">
+    <Button
+      variant={discountMode === 'auto' ? 'default' : 'secondary'}
+      onClick={() => onDiscountModeChange('auto')}
+    >
+      Auto
+    </Button>
+
+    <Button
+      variant={discountMode === 'manual' ? 'default' : 'secondary'}
+      onClick={() => onDiscountModeChange('manual')}
+    >
+      Manual
+    </Button>
+  </div>
+</div>
+
+
+{discountMode === 'manual' && (
+  <div className="space-y-2 bg-gray-50 p-3 rounded-lg border">
+    <Label>Manual Discount</Label>
+
+    <Select
+      value={manualDiscount.type}
+      onValueChange={(value) =>
+        onManualDiscountChange({
+          ...manualDiscount,
+          type: value as 'fixed_amount' | 'percentage',
+        })
+      }
+    >
+      <SelectTrigger>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="fixed_amount">Fixed Amount</SelectItem>
+        <SelectItem value="percentage">Percentage</SelectItem>
+      </SelectContent>
+    </Select>
+
+    <Input
+      type="number"
+      min="0"
+      value={manualDiscount.value}
+       onFocus={() => window.dispatchEvent(new CustomEvent('disable-scanner'))}
+        onBlur={() => window.dispatchEvent(new CustomEvent('enable-scanner'))}
+      onChange={(e) =>
+        onManualDiscountChange({
+          ...manualDiscount,
+          value: Number(e.target.value) || 0,
+        })
+      }
+      placeholder={manualDiscount.type === 'percentage' ? 'e.g. 10%' : 'e.g. 500'}
+    />
+  </div>
+)}
+
+
+   <Separator />
           
           <div className="flex justify-between text-lg font-bold">
-            <span>Total</span>
+            <span>Total {discountMode === 'manual' && (
+              <span className='text-muted text-sm'>(before removing discount)</span>
+             )}</span>
             <span>NGN {finalTotal.toFixed(2)}</span>
           </div>
         </div>

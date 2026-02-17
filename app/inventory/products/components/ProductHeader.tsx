@@ -38,11 +38,11 @@ export function ProductHeader({ product }: ProductHeaderProps) {
          <div className="relative">
               <Link href="/dashboard" className="flex items-center gap-3">
           <div className="h-8 w-8 bg-green-400 rounded-lg flex items-center justify-center">
-            <span className="text-black font-bold text-sm">BMT</span>
+            <span className="text-black font-bold text-sm">PL</span>
           </div>
           <div>
-            <div className="font-bold text-gray-900 text-lg">Big Men</div>
-            <div className="text-xs text-gray-800 -mt-1">Transaction Apparel</div>
+            <div className="font-bold text-gray-900 text-lg">Prime</div>
+            <div className="text-xs text-gray-800 -mt-1">Labs</div>
           </div>
         </Link>
           </div>

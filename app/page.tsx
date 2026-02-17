@@ -57,7 +57,7 @@ export default function Home() {
          
           <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6 my-8 md:my-12">
             {[
-              { label: "Premium Collections", value: "BMT", icon: "👔" },
+              { label: "Premium Collections", value: "PL", icon: "👔" },
               { label: "Inventory Control", value: "100%", icon: "📊" },
               { label: "Real-time Analytics", value: "Live", icon: "📈" },
               { label: "Secure Access", value: "24/7", icon: "🔒" }
@@ -120,7 +120,7 @@ export default function Home() {
             </div>
             <div className="text-gray-600 text-xs">
               <p>
-                © {new Date().getFullYear()} Big Men Transaction Apparel
+                © {new Date().getFullYear()} PrimeLabs Business Solution.
                 <span className="block sm:inline sm:ml-1">All Rights Reserved</span>
               </p>
             </div>

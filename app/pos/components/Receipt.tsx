@@ -9,7 +9,7 @@ interface ReceiptProps {
   tax: number;
   total: number;
   paymentMethod: string;
-  amountPaid: number;
+  amountPaid: number | string;
   change: number;
   purchaseType: 'in-store' | 'online';
   splitPayments?: { method: string; amount: string }[];
@@ -19,7 +19,7 @@ interface ReceiptProps {
     paymentFrequency: 'daily' | 'weekly' | 'monthly';
     startDate: string;
     notes: string;
-    downPayment: number;
+    downPayment: number | string;
     remainingBalance: number;
   };
   transactionId?: string; 
@@ -139,9 +139,18 @@ export function Receipt({
     },
   };
 
-  const formatCurrency = (amount: number) => {
-    return `NGN ${amount.toFixed(2)}`;
-  };
+const formatCurrency = (amount: number | string | undefined) => {
+  if (amount === undefined || amount === null) return 'NGN 0.00';
+  const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+  return `NGN ${num.toFixed(2)}`;
+};
+
+const toNumber = (val: number | string | undefined): number => {
+  if (val === undefined || val === null) return 0;
+  return typeof val === 'string' ? parseFloat(val) : val;
+};
+
+const discountAmount = toNumber(discount);
 
   return (
     <div style={styles.container}>
@@ -149,16 +158,16 @@ export function Receipt({
       <div style={styles.header}>
         <div style={styles.logo}>
           <div style={styles.logoBox}>
-            <span style={{ color: '#000', fontWeight: 'bold', fontSize: '12px' }}>BMT</span>
+            <span style={{ color: '#000', fontWeight: 'bold', fontSize: '12px' }}>PL</span>
           </div>
           <div>
-            <div style={{ fontWeight: 'bold', fontSize: '16px' }}>Big Men</div>
-            <div style={{ fontSize: '11px', color: '#666' }}>Transaction Apparel</div>
+            <div style={{ fontWeight: 'bold', fontSize: '16px' }}>Prime</div>
+            <div style={{ fontSize: '11px', color: '#666' }}>Labs</div>
           </div>
         </div>
         
         <div style={{ fontSize: '16px', fontWeight: 'bold', marginBottom: '5px' }}>
-          Big Men Transaction Apparel
+          Prime Labs Apparel
         </div>
         <div style={{ fontSize: '14px', marginBottom: '5px' }}>
           {installmentPlan ? 'INSTALLMENT SALES RECEIPT' : 'SALES RECEIPT'}
@@ -304,12 +313,12 @@ export function Receipt({
           <span>Subtotal:</span>
           <span>{formatCurrency(subtotal)}</span>
         </div>
-         {discount && discount > 0 && (
-            <div style={styles.row}>
-              <span>Discount:</span>
-              <span>-{formatCurrency(discount)}</span>
-            </div>
-          )}
+         {discountAmount > 0 && (
+  <div style={styles.row}>
+    <span>Discount:</span>
+    <span>-{formatCurrency(discountAmount)}</span>
+  </div>
+)}
         <div style={styles.row}>
           <span>Tax:</span>
           <span>{formatCurrency(tax)}</span>
@@ -346,7 +355,7 @@ export function Receipt({
             <div style={styles.row}>
               <span>Balance Due:</span>
               <span style={{ fontWeight: 'bold' }}>
-                {formatCurrency(total - amountPaid)}
+                {formatCurrency(toNumber(total) - toNumber(amountPaid))}
               </span>
             </div>
           </>
@@ -370,10 +379,22 @@ export function Receipt({
         <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>
           Thank you for your business!
         </div>
-        <div>For inquiries: contact@bigmenapparel.com</div>
+        <div>For inquiries: contact@primelabs.com</div>
         <div>Phone: 0800-BIG-MEN</div>
         <div style={{ marginTop: '10px', fontSize: '10px' }}>
           Receipt ID: {transactionId} • Printed: {new Date().toLocaleString()}
+        </div>
+        <div style={{ marginTop: '2px', fontSize: '10px' }}>
+          <span>
+           PrimeLabs Business Solution. All rights reserved.
+          </span>
+
+          <span >
+            Powered by
+            <span>
+              PrimeLabs Business Solution 
+            </span>
+    </span>
         </div>
       </div>
     </div>

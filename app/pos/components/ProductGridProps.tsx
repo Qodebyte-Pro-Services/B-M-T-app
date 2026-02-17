@@ -7,21 +7,24 @@ import { Badge } from "@/components/ui/badge";
 import { ShoppingCart, ChevronLeft, ChevronRight, Copy } from "lucide-react";
 
 import Image from 'next/image';  
-import { Discount, Product, ProductVariant } from '@/app/utils/type';
+import { VariantWithProduct } from './useVariants';
+import { parseImageUrl } from '@/app/utils/imageHelper';
 
 interface ProductGridProps {
-  variants: Array<ProductVariant & { product: Product }>;
- onAddToCart: (variant: ProductVariant, product: Product, discount?: Discount) => void;
-  
+  variants: VariantWithProduct[];
+  onAddToCart: (variant: VariantWithProduct) => void;
 }
 
 export function ProductGrid({ variants, onAddToCart }: ProductGridProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
   
-  const totalPages = Math.ceil(variants.length / itemsPerPage);
+   const totalPages = Math.ceil(variants.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedVariants = variants.slice(startIndex, startIndex + itemsPerPage);
+    const paginatedVariants = variants.slice(startIndex, startIndex + itemsPerPage);
+
+          const apiBaseUrl = process.env.NEXT_PUBLIC_IMAGE_BASE_URL || 'https://api.bmtpossystem.com';
+
 
 type BadgeVariant = "default" | "secondary" | "destructive" | "outline";
 
@@ -61,6 +64,8 @@ const getStockStatus = (
     if (currentPage < totalPages) setCurrentPage(currentPage + 1);
   };
 
+
+
   return (
     <div className="flex-1 overflow-y-auto p-6">
       {variants.length === 0 ? (
@@ -72,25 +77,27 @@ const getStockStatus = (
         <>
         
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-            {paginatedVariants.map((variantData) => {
-             const { product, ...variant } = variantData;
+            {paginatedVariants.map((variant) => {
+  
               const status = getStockStatus(variant.quantity, variant.threshold);
-              
+                const images = parseImageUrl(variant.image_url);
+              const imagePath = images[0]?.url;
               return (
                 <Card 
-                  key={variant.id} 
+                  key={variant.variant_id} 
                   className={`overflow-hidden hover:shadow-lg transition-shadow bg-gray-white ${
                     variant.quantity === 0 ? 'opacity-75 grayscale' : ''
                   }`}
                 >
          
                   <div className="relative aspect-square overflow-hidden p-1 bg-gray-100">
-                    {variant.images && variant.images.length > 0 ? (
+                    {imagePath ? (
+                    
                       <Image
-                        src={variant.images[0]}
-                        width={70}
-                        height={50}
-                        alt={variant.name}
+                          src={`${apiBaseUrl}${imagePath}`}
+                        width={200}
+                        height={200}
+                        alt={variant.product_name}
                         className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
                       />
                     ) : (
@@ -121,14 +128,14 @@ const getStockStatus = (
                   <CardContent className="p-4 space-y-3">
                     <div className="space-y-1">
                       <h3 className="font-semibold text-gray-900 truncate">
-                        {product.name}
+                         {variant.product_name}
                       </h3>
                       <div className="text-sm text-gray-600 truncate">
-                        {variant.name}
+                       {variant.sku}
                       </div>
                      <div  className="  grid grid-cols-1   xl:flex items-center justify-between">
                        <div className="text-xs text-gray-500">
-                        {product.brand}
+                      {variant.brand}
                       </div>
 
                           <Button
@@ -138,7 +145,7 @@ const getStockStatus = (
                             ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                             : 'bg-green-400 hover:bg-green-500 text-black'
                         }`}
-                        onClick={() => onAddToCart(variant, product)}
+                        onClick={() => onAddToCart(variant)}
                         disabled={variant.quantity === 0}
                       >
                         <ShoppingCart className="h-4 w-4" />
@@ -149,7 +156,7 @@ const getStockStatus = (
                     
                     <div className="flex items-center ">
                       <div className="font-bold text-normal text-gray-900 w-full">
-                        NGN {variant.sellingPrice.toFixed(2)}
+                             ₦{parseFloat(String(variant.selling_price)).toLocaleString()}
                       </div>
                       
                    

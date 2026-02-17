@@ -4,6 +4,7 @@ import { ReactNode, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { Sidebar } from '@/app/dashboard/components/Sidebar';
 import { Header } from '@/app/dashboard/components/Header';
+import { useAuthCheck } from '@/app/components/authHook';
 
 
 
@@ -13,7 +14,8 @@ interface InventoryLayoutProps {
 
 export function InventoryLayout({ children }: InventoryLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-
+  useAuthCheck();
+  
   return (
    <div className="flex min-h-screen bg-white">
       
@@ -38,6 +40,20 @@ export function InventoryLayout({ children }: InventoryLayoutProps) {
           <div className="max-w-7xl mx-auto w-full min-w-0">
             {children}
           </div>
+          <footer className="mt-10 border-t border-gray-200 pt-4">
+  <div className="flex flex-col sm:flex-row items-center justify-between gap-2 text-sm text-gray-500">
+    <span>
+      © {new Date().getFullYear()} PrimeLabs Business Solution. All rights reserved.
+    </span>
+
+    <span className="flex items-center gap-1">
+      Powered by
+      <span className="font-medium text-gray-700">
+        PrimeLabs Business Solution
+      </span>
+    </span>
+  </div>
+</footer>
         </main>
       </div>
     </div>

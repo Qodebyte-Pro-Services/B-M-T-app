@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,10 +10,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
-import { Plus, Trash2, Image as ImageIcon, Hash,Layers, RefreshCw } from "lucide-react";
+import { Plus, Trash2, Image as ImageIcon, Hash,Layers, RefreshCw, Loader } from "lucide-react";
 import { toast } from 'sonner';
 import Image from 'next/image';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Attribute, Category, CreateProductPayload, ProductAttributeState } from '@/app/utils/type';
+import { is } from 'date-fns/locale';
+import { set } from 'zod';
 
 interface Variation {
   id: number;
@@ -24,7 +27,7 @@ interface Variation {
   sellingPrice: number;
   quantity: number;
   threshold: number;
-  images: string[];
+  images: File[];
 }
 
 const generateUniqueBarcode = (): string => {
@@ -45,10 +48,11 @@ const generateUniqueBarcode = (): string => {
 };
 
 
-    function AttributeItem({
+function AttributeItem({
   attr,
   index,
   disabled,
+  isNameLocked,
   updateAttributeName,
   addAttributeValue,
   removeAttribute,
@@ -57,11 +61,13 @@ const generateUniqueBarcode = (): string => {
   attr: { name: string; values: string[] };
   index: number;
   disabled: boolean;
+  isNameLocked: boolean;
   updateAttributeName: (index: number, name: string) => void;
   addAttributeValue: (index: number, value: string) => void;
   removeAttribute: (index: number) => void;
   removeAttributeValue: (attrIndex: number, valueIndex: number) => void;
 }) {
+
   const [newValue, setNewValue] = useState("");
 
   
@@ -71,13 +77,19 @@ const generateUniqueBarcode = (): string => {
      
       <div className="flex gap-2">
         <Input
-        disabled={disabled}
+        disabled={disabled || isNameLocked}
         placeholder="Attribute name (e.g., Color)"
         value={attr.name}
         onChange={(e) =>
             updateAttributeName(index, e.target.value)
         }
         />
+        {isNameLocked && (
+  <p className="text-xs text-gray-500 mt-1">
+    This attribute comes from system configuration
+  </p>
+)}
+
        <Button
         disabled={disabled}
         variant="destructive"
@@ -87,7 +99,7 @@ const generateUniqueBarcode = (): string => {
           <Trash2 className="h-4 w-4" />
         </Button>
       </div>
-
+        
     
       <div className="flex flex-wrap gap-2">
         {attr.values.map((value, vIndex) => (
@@ -135,22 +147,143 @@ export default function AddProductForm() {
   const [variations, setVariations] = useState<Variation[]>([]);
   const [hasVariations, setHasVariations] = useState(false);
   const [variantsGenerated, setVariantsGenerated] = useState(false);
-  const [images, setImages] = useState<string[]>([]);
-  const [attributes, setAttributes] = useState<
-  { id: string; name: string; values: string[] }[]
->([
-  { id: crypto.randomUUID(), name: "Color", values: ["Red", "Blue"] },
-  { id: crypto.randomUUID(), name: "Size", values: ["S", "M", "L"] },
-]);
+ const [productImages, setProductImages] = useState<File[]>([]);
+const [attributes, setAttributes] = useState<ProductAttributeState[]>([]);
+  const [isCreating, setIsCreating] = useState(false);
+
     const [productName, setProductName] = useState<string>("");
 const [brand, setBrand] = useState<string>("");
 
 const [customBaseSku, setCustomBaseSku] = useState<string | null>(null);
+const [categories, setCategories] = useState<Category[]>([]);
+const [categoriesLoading, setCategoriesLoading] = useState(false);
+const [availableAttributes, setAvailableAttributes] = useState<Attribute[]>([]);
 
-
+const [categoryId, setCategoryId] = useState<string>("");
+const [description, setDescription] = useState("");
+const [taxable, setTaxable] = useState(false);
+const [unit, setUnit] = useState("Pieces");
 const [categoryModalOpen, setCategoryModalOpen] = useState(false);
 const [newCategoryName, setNewCategoryName] = useState("");
   const [singleBarcode, setSingleBarcode] = useState<string>("");
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
+
+  const [singleStock, setSingleStock] = useState({
+  costPrice: 0,
+  sellingPrice: 0,
+  quantity: 0,
+  threshold: 0,
+});
+
+
+  useEffect(() => {
+  const fetchCategories = async () => {
+    try {
+       const token = localStorage.getItem('adminToken');
+        if (!token) {
+          throw new Error('No authentication token found');
+        }
+      setCategoriesLoading(true);
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/configure/categories`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+             'Content-Type': 'application/json',
+          },
+        }
+      );
+      const data = await res.json();
+      setCategories(data);
+    } catch {
+      toast.error("Failed to load categories");
+    } finally {
+      setCategoriesLoading(false);
+    }
+  };
+
+  fetchCategories();
+}, []);
+
+const handleCreateCategory = async () => {
+  if (isCreating) return;
+  setIsCreating(true);
+  try {
+      const token = localStorage.getItem('adminToken');
+
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_API_BASE_URL}/configure/categories`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ name: newCategoryName }),
+      }
+    );
+
+    if (!res.ok) throw new Error();
+
+    const created: Category = await res.json();
+
+    setCategories(prev => [created, ...prev]);
+    setCategoryId(created.id);
+
+    toast.success("Category created");
+    setCategoryModalOpen(false);
+    setNewCategoryName("");
+  } catch {
+    toast.error("Failed to create category");
+  } finally {
+    setIsCreating(false);
+  }
+};
+
+useEffect(() => {
+  const fetchAttributes = async () => {
+    try {
+
+        const token = localStorage.getItem('adminToken');
+        if (!token) {
+          throw new Error('No authentication token found');
+        }
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/configure/attributes`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      const data = await res.json();
+      setAvailableAttributes(data.attributes);
+    } catch {
+      toast.error("Failed to load attributes");
+    }
+  };
+
+  fetchAttributes();
+}, []);
+
+useEffect(() => {
+  if (!hasVariations) return;
+  if (attributes.length > 0) return;
+  if (availableAttributes.length === 0) return;
+
+  setAttributes(
+    availableAttributes.map(attr => ({
+      id: crypto.randomUUID(),
+      name: attr.name,
+      attributeId: attr.id,
+      values: attr.values?.map(v => v.value) ?? [],
+    }))
+  );
+}, [availableAttributes, hasVariations]);
+
 
 
     function abbreviateWord(word: string): string {
@@ -180,22 +313,36 @@ const computedBaseSku: string = generateBaseSku(brand, productName);
 const baseSku: string =
   customBaseSku !== null ? customBaseSku : computedBaseSku;
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files) {
-      const newImages = Array.from(files).map(file => URL.createObjectURL(file));
-      setImages(prev => [...prev, ...newImages]);
-    }
-  };
+const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const files = e.target.files;
+  if (!files) return;
+
+  setProductImages(prev => [
+    ...prev,
+    ...Array.from(files),
+  ]);
+   if (imageInputRef.current) {
+    imageInputRef.current.value = "";
+  }
+};
+
+
 
   const removeImage = (index: number) => {
-    setImages(prev => prev.filter((_, i) => i !== index));
+    setProductImages(prev => prev.filter((_, i) => i !== index));
   };
+
+  
 
 const addAttribute = () => {
   setAttributes(prev => [
     ...prev,
-    { id: crypto.randomUUID(), name: "", values: [] },
+    {
+      id: crypto.randomUUID(),
+      name: "",
+      values: [],
+      attributeId: undefined,
+    },
   ]);
 };
 
@@ -233,20 +380,78 @@ const updateVariantText = (
 
 const updateAttributeName = (index: number, name: string) => {
   setAttributes(prev => {
-    const copy = [...prev];
+     const copy = [...prev];
+
+    const matched = availableAttributes.find(
+      a => a.name.toLowerCase() === name.trim().toLowerCase()
+    );
+
     copy[index].name = name;
+
+
+ if (matched) {
+     copy[index].attributeId = matched.id;
+
+  if (copy[index].values.length === 0 && matched.values?.length) {
+    copy[index].values = matched.values.map(v => v.value);
+  }
+    } else {
+      copy[index].attributeId = undefined;
+    }
+
     return copy;
   });
 };
 
-const addAttributeValue = (attrIndex: number, value: string) => {
+const addAttributeValue = async (attrIndex: number, value: string) => {
   if (!value.trim()) return;
 
+  const attr = attributes[attrIndex];
+
+ 
+  if (
+    attr.values.some(
+      v => v.toLowerCase() === value.toLowerCase()
+    )
+  ) {
+    toast.error("Value already exists");
+    return;
+  }
+
+ 
+  if (attr.attributeId) {
+    try {
+      const token = localStorage.getItem("adminToken");
+      if (!token) throw new Error("No auth token");
+
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/configure/attributes/${attr.attributeId}/values`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ value }),
+        }
+      );
+
+      if (!res.ok) {
+        throw new Error("Failed to save attribute value");
+      }
+    } catch (err) {
+      toast.error("Could not save attribute value");
+      console.error(err);
+      return;
+    }
+  }
+
+  // 3️⃣ Update local state
   setAttributes(prev => {
-    const next = prev.map((attr, i) =>
+    const next = prev.map((a, i) =>
       i === attrIndex
-        ? { ...attr, values: [...attr.values, value] }
-        : attr
+        ? { ...a, values: [...a.values, value] }
+        : a
     );
 
     if (variantsGenerated) {
@@ -256,6 +461,8 @@ const addAttributeValue = (attrIndex: number, value: string) => {
     return next;
   });
 };
+
+
 
 const removeAttribute = (index: number) => {
   setAttributes(prev => {
@@ -339,6 +546,25 @@ function buildVariations(
   });
 }
 
+const resetForm = () => {
+  setProductName("");
+  setBrand("");
+  setCategoryId("");
+  setDescription("");
+  setTaxable(false);
+  setUnit("Pieces");
+  setCustomBaseSku(null);
+
+  setProductImages([]);
+  setSingleBarcode("");
+
+  setHasVariations(false);
+  setVariantsGenerated(false);
+  setVariations([]);
+  setAttributes([]);
+
+  setNewCategoryName("");
+};
 
 
 
@@ -365,11 +591,11 @@ const attributesLocked = variantsGenerated && variations.length > 0;
 const handleVariantImageUpload = (id: number, files: FileList | null) => {
   if (!files) return;
 
-  const newImages = Array.from(files).map(file => URL.createObjectURL(file));
-
   setVariations(prev =>
     prev.map(v =>
-      v.id === id ? { ...v, images: [...v.images, ...newImages] } : v
+      v.id === id
+        ? { ...v, images: [...v.images, ...Array.from(files)] }
+        : v
     )
   );
 };
@@ -386,6 +612,126 @@ const handleVariantImageUpload = (id: number, files: FileList | null) => {
     updateVariantText(variantId, "barcode", newBarcode);
     toast.success('Barcode regenerated');
   };
+
+  const buildCreateProductPayload = (): CreateProductPayload => {
+  if (!productName || !brand) {
+    throw new Error("Missing required fields");
+  }
+
+  if (hasVariations) {
+    return {
+      name: productName,
+      brand,
+      categoryId,
+      unit,
+      taxable,
+      description,
+      images: productImages,
+      hasVariations: true,
+      baseSku,
+
+      variants: variations.map(v => ({
+        name: v.name,
+        sku: v.sku,
+        barcode: v.barcode,
+        costPrice: v.costPrice,
+        sellingPrice: v.sellingPrice,
+        quantity: v.quantity,
+        threshold: v.threshold,
+        images: v.images as File[], 
+      })),
+    };
+  }
+
+  return {
+    name: productName,
+    brand,
+    categoryId,
+    unit,
+    taxable,
+    description,
+    images: productImages,
+    hasVariations: false,
+    baseSku,
+
+productStock: {
+  ...singleStock,
+  barcode: singleBarcode,
+},
+  };
+};
+
+const buildProductFormData = (payload: CreateProductPayload) => {
+  const formData = new FormData();
+
+  formData.append("category_id", payload.categoryId);
+  formData.append("name", payload.name);
+  formData.append("brand", payload.brand);
+  formData.append("description", payload.description);
+  formData.append("base_sku", payload.baseSku);
+  formData.append("unit", payload.unit);
+  formData.append("taxable", String(payload.taxable));
+  formData.append("hasVariation", JSON.stringify(payload.hasVariations));
+
+  
+  if (payload.images.length > 0) {
+    formData.append("product_main_image", payload.images[0]);
+
+    payload.images.slice(1).forEach(file => {
+      formData.append("product_additional_image_", file);
+    });
+  }
+
+
+  if (payload.hasVariations && payload.variants) {
+     formData.append(
+    "attributes",
+    JSON.stringify(
+      attributes.map(a => ({
+        name: a.name,
+        values: a.values,
+      }))
+    )
+  );
+    const variantsWithoutImages = payload.variants.map(v => ({
+      sku: v.sku,
+      barcode: v.barcode,
+      cost_price: v.costPrice,
+      selling_price: v.sellingPrice,
+      quantity: v.quantity,
+      threshold: v.threshold,
+    }));
+
+   
+
+    formData.append("variants", JSON.stringify(variantsWithoutImages));
+
+    payload.variants.forEach((variant, index) => {
+      variant.images.forEach(file => {
+        formData.append(`variants[${index}][image_url]`, file);
+      });
+    });
+  }
+
+ 
+  if (!payload.hasVariations && payload.productStock) {
+    formData.append(
+      "variants",
+      JSON.stringify([
+        {
+          sku: payload.baseSku,
+          barcode: payload.productStock.barcode,
+          cost_price: payload.productStock.costPrice,
+          selling_price: payload.productStock.sellingPrice,
+          quantity: payload.productStock.quantity,
+          threshold: payload.productStock.threshold,
+        },
+      ])
+    );
+  }
+
+  return formData;
+};
 
 
   return (
@@ -429,22 +775,41 @@ const handleVariantImageUpload = (id: number, files: FileList | null) => {
                 
                 <div>
                   <Label className='mb-2' htmlFor="category">Category</Label>
-                  <Select >
-                    <SelectTrigger  className='border-gray-900 border-2 shadow-lg text-gray-900' >
-                      <SelectValue className='text-gray-900' placeholder="Select category" />
-                    </SelectTrigger>
-                    <SelectContent >
-                      <SelectItem value="jackets">Jackets</SelectItem>
-                      <SelectItem value="shirts">Shirts</SelectItem>
-                      <SelectItem value="pants">Pants</SelectItem>
-                      <SelectItem value="shoes">Shoes</SelectItem>
-                    </SelectContent>
-                  </Select>
+              <Select onValueChange={setCategoryId} value={categoryId} disabled={categoriesLoading} >
+                  <SelectTrigger className="border-gray-900 border-2 shadow-lg">
+                    <SelectValue placeholder={categoriesLoading ? "Loading categories..." : "Select category"} />
+                  </SelectTrigger>
+
+                  <SelectContent>
+                    {categoriesLoading && (
+  <div className="flex items-center gap-2 text-sm text-gray-600">
+    <Loader className="h-4 w-4 animate-spin" />
+    Loading categories...
+  </div>
+)}
+                   {categoriesLoading ? (
+                        <div className="p-2 text-center text-sm text-gray-600">
+                          Loading categories...
+                        </div>
+                      ) : categories.length === 0 ? (
+                        <div className="p-2 text-center text-sm text-gray-600">
+                          No categories available
+                        </div>
+                      ) : (
+                        categories.map(cat => (
+                          <SelectItem key={cat.id} value={cat.id}>
+                            {cat.name}
+                          </SelectItem>
+                        ))
+                      )}
+                  </SelectContent>
+                </Select>
                  <Button
                     variant="link"
                     size="sm"
                     className="mt-1 p-0 h-auto text-gray-900"
                     onClick={() => setCategoryModalOpen(true)}
+                    disabled={categoriesLoading}
                     >
                     <Plus className="h-3 w-3 mr-1" />
                     Create new category
@@ -456,7 +821,7 @@ const handleVariantImageUpload = (id: number, files: FileList | null) => {
               <div className="space-y-4">
                  <div className='flex flex-col gap-3'>
                   <Label htmlFor="unit">Unit</Label>
-                  <Input id="unit" placeholder="e.g., Pieces" defaultValue="Pieces"  className='border-gray-900 border-2 shadow-lg' />
+                  <Input id="unit" placeholder="e.g., Pieces"   className='border-gray-900 border-2 shadow-lg' value={unit} onChange={e => setUnit(e.target.value)} />
                 </div>
                 
                 <div className='flex flex-col gap-3'>
@@ -478,7 +843,8 @@ const handleVariantImageUpload = (id: number, files: FileList | null) => {
                 </div>
                 
                 <div className="flex items-center space-x-2">
-                  <Checkbox id="taxable" className='text-gray-900 border-2 border-gray-950' />
+                  <Checkbox id="taxable"  checked={taxable}
+  onCheckedChange={(v) => setTaxable(Boolean(v))} className='text-gray-900 border-2 border-gray-950' />
                   <Label htmlFor="taxable" className="cursor-pointer">
                     Product is taxable
                   </Label>
@@ -505,6 +871,8 @@ const handleVariantImageUpload = (id: number, files: FileList | null) => {
                 placeholder="Describe the product features, materials, care instructions..."
                 rows={4}
                 className='border-gray-900 border-2 shadow-lg'
+                 value={description}
+                onChange={(e) => setDescription(e.target.value)}
               />
             </div>
 
@@ -512,24 +880,32 @@ const handleVariantImageUpload = (id: number, files: FileList | null) => {
            <div className='flex flex-col gap-3'>
               <Label>Product Images</Label>
               <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                {images.map((img, index) => (
-                  <div key={index} className="relative group">
-                    <div className="aspect-square rounded-lg overflow-hidden bg-gray-100">
-                      <Image width={200} height={200} src={img} alt={`Product ${index + 1}`} className="w-full h-full object-cover" />
-                    </div>
-                    <Button
-                      size="icon"
-                      variant="destructive"
-                      className="absolute top-1 right-1 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={() => removeImage(index)}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                    </Button>
-                  </div>
-                ))}
+               {productImages.map((file, index) => (
+              <div key={index} className="relative group">
+                <div className="aspect-square rounded-lg overflow-hidden bg-gray-100">
+                  <Image
+                    width={200}
+                    height={200}
+                    src={URL.createObjectURL(file)}
+                    alt={`Product ${index + 1}`}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+               <Button
+                size="icon"
+                variant="destructive"
+                className="absolute top-1 right-1 h-6 w-6 bg-red-500 text-white opacity-0 group-hover:opacity-100"
+                onClick={() => removeImage(index)}
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
+              </div>
+            ))}
+
                 
                 <label className="cursor-pointer">
                   <input
+                  ref={imageInputRef}
                     type="file"
                     multiple
                     accept="image/*"
@@ -568,18 +944,19 @@ const handleVariantImageUpload = (id: number, files: FileList | null) => {
                     <CardTitle className="text-sm text-gray-900">Attributes</CardTitle>
                   </CardHeader>
                 <CardContent className="space-y-4 text-gray-900">
-                 {attributes.map((attr, index) => (
-                    <AttributeItem
-                        key={attr.id}
-                        attr={attr}
-                        index={index}
-                        disabled={attributesLocked}
-                        updateAttributeName={updateAttributeName}
-                        addAttributeValue={addAttributeValue}
-                        removeAttribute={removeAttribute}
-                        removeAttributeValue={removeAttributeValue}
-                    />
-                    ))}
+                  {attributes.map((attr, index) => (
+                      <AttributeItem
+                          key={attr.id}
+                          attr={attr}
+                          index={index}
+                          disabled={attributesLocked}
+                          isNameLocked={Boolean(attr.attributeId)}
+                          updateAttributeName={updateAttributeName}
+                          addAttributeValue={addAttributeValue}
+                          removeAttribute={removeAttribute}
+                          removeAttributeValue={removeAttributeValue}
+                      />
+                      ))}
 
 
                     <Button disabled={attributesLocked}  onClick={addAttribute} className="w-full bg-gray-900 text-white hover:bg-gray-800 flex items-center justify-center">
@@ -680,7 +1057,13 @@ const handleVariantImageUpload = (id: number, files: FileList | null) => {
                             <div className="flex mt-2 gap-2">
                             {variant.images.map((img, i) => (
                                 <div key={i} className="relative w-12 h-12 rounded overflow-hidden">
-                                <Image src={img} alt={`Variant ${i}`} width={48} height={48} className="object-cover" />
+                             <Image
+                              src={URL.createObjectURL(img)}
+                              alt={`Variant ${i}`}
+                              width={48}
+                              height={48}
+                              className="object-cover"
+                            />
                                 <button
                                     className="absolute top-0 right-0 bg-red-500 text-white rounded-full w-4 h-4 text-xs flex items-center justify-center"
                                     onClick={() => {
@@ -715,19 +1098,31 @@ const handleVariantImageUpload = (id: number, files: FileList | null) => {
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                    <div className='flex flex-col gap-3'>
                       <Label>Cost Price</Label>
-                      <Input type="number" placeholder="0.00" className='border-gray-900 border-2 shadow-lg' />
+                      <Input type="number"  value={singleStock.costPrice}
+  onChange={e =>
+    setSingleStock(s => ({ ...s, costPrice: Number(e.target.value) }))
+  } placeholder="0.00" className='border-gray-900 border-2 shadow-lg' />
                     </div>
                     <div className='flex flex-col gap-3'>
                       <Label>Selling Price</Label>
-                      <Input type="number" placeholder="0.00" className='border-gray-900 border-2 shadow-lg' />
+                      <Input type="number" value={singleStock.sellingPrice}
+  onChange={e =>
+    setSingleStock(s => ({ ...s, sellingPrice: Number(e.target.value) }))
+  } placeholder="0.00" className='border-gray-900 border-2 shadow-lg' />
                     </div>
                     <div className='flex flex-col gap-3'>
                       <Label>Quantity</Label>
-                      <Input type="number" placeholder="0" className='border-gray-900 border-2 shadow-lg' />
+                      <Input type="number"  value={singleStock.quantity}
+  onChange={e =>
+    setSingleStock(s => ({ ...s, quantity: Number(e.target.value) }))
+  }  placeholder="0" className='border-gray-900 border-2 shadow-lg' />
                     </div>
                    <div className='flex flex-col gap-3'>
                       <Label>Low Stock Threshold</Label>
-                      <Input type="number" placeholder="10" className='border-gray-900 border-2 shadow-lg' />
+                      <Input type="number" value={singleStock.threshold}
+  onChange={e =>
+    setSingleStock(s => ({ ...s, threshold: Number(e.target.value) }))
+  } placeholder="10" className='border-gray-900 border-2 shadow-lg' />
                     </div>
 
                  <div className="flex flex-col gap-3">
@@ -789,12 +1184,20 @@ const handleVariantImageUpload = (id: number, files: FileList | null) => {
                         className="bg-gray-900 text-white hover:bg-gray-800"
                         disabled={!newCategoryName.trim()}
                         onClick={() => {
+                          handleCreateCategory();
                         toast.success(`Category "${newCategoryName}" created`);
                         setCategoryModalOpen(false);
                         setNewCategoryName("");
                         }}
                     >
-                        Create Category
+                        {isCreating ? (
+    <>
+      <Loader className="h-4 w-4 animate-spin" />
+      Creating...
+    </>
+  ) : (
+    "Create Category"
+  )}
                     </Button>
                     </DialogFooter>
                 </DialogContent>
@@ -802,9 +1205,85 @@ const handleVariantImageUpload = (id: number, files: FileList | null) => {
 
            
             <div className="flex justify-end gap-3 pt-4 border-t">
-              <Button className="bg-black hover:bg-gray-800 text-white">
-                Create Product
-              </Button>
+  <Button
+  className="bg-black hover:bg-gray-800 text-white"
+   disabled={isCreating}
+  onClick={async () => {
+     if (isCreating) return;
+      setIsCreating(true);
+    try {
+     
+      const newAttributes = attributes.filter(a => !a.attributeId);
+
+      if (newAttributes.length > 0) {
+          const token = localStorage.getItem("adminToken");
+          if (!token) {
+            throw new Error("No authentication token found");
+          }
+        const res = await fetch(
+          `${process.env.NEXT_PUBLIC_API_BASE_URL}/configure/attributes/bulk`,
+          {
+            method: "POST",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              attributes: newAttributes.map(a => ({
+                name: a.name,
+                values: a.values,
+              })),
+            }),
+          }
+        );
+
+        if (!res.ok) {
+          throw new Error("Failed to create attributes");
+        }
+      }
+
+   
+      const payload = buildCreateProductPayload();
+      const formData = buildProductFormData(payload);
+
+      const token = localStorage.getItem("adminToken"); 
+        if (!token) {
+          throw new Error("No authentication token found");
+        }
+
+      const productRes = await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE_URL}/products/with-variants`,
+        {
+          method: "POST",
+          body: formData,
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!productRes.ok) {
+        const err = await productRes.json();
+        throw new Error(err.message || "Failed to create product");
+      }
+
+      toast.success("Product created successfully 🎉");
+      resetForm();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setIsCreating(false);
+    }
+  }}
+
+>
+   {isCreating ? (
+    <>
+      <Loader className="h-4 w-4 animate-spin" />
+      Creating...
+    </>
+  ) : (
+    "Create Product"
+  )}
+</Button>
+
             </div>
           </div>
         </CardContent>

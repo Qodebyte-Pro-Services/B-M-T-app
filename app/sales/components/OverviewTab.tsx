@@ -1,11 +1,11 @@
 'use client';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Transaction } from '@/app/utils/type';
 import { SalesKPIs } from "./SalesKPIs";
 import { SalesChart } from "./SalesChart";
 import { PurchaseTypeChart } from "./PurchaseTypeChart";
 import { TopProducts } from "./TopProducts";
+import { Transaction } from '@/app/utils/type';
 
 type DateRange = {
   filter: string;
@@ -16,13 +16,36 @@ type DateRange = {
 interface OverviewTabProps {
   transactions: Transaction[];
   dateRange: DateRange;
+  kpiData: {
+    summary: {
+      total_transactions: number;
+      total_sales_amount: number;
+      subtotal: number;
+      total_tax: number;
+      total_discount: number;
+      average_transaction_value: number | string;
+    };
+    purchase_types: {
+      distribution: Record<string, { count: number; total_amount: number }>;
+      total_transactions: number;
+    };
+    payment_methods: {
+      distribution: Record<string, { count: number; total_amount: number; percentage?: number | string }>;
+      total_transactions: number;
+      credit_breakdown: {
+        full_credit: number;
+        partial_credit: number;
+        total_credit: number;
+      };
+    };
+  };
 }
 
-export function OverviewTab({ transactions, dateRange }: OverviewTabProps) {
+export function OverviewTab({ transactions, dateRange, kpiData }: OverviewTabProps) {
   return (
     <div className="space-y-6">
 
-      <SalesKPIs transactions={transactions} />
+      <SalesKPIs kpiData={kpiData} />
       
     
       <Card className="bg-gray-100 border border-gray-300 shadow-2xl text-gray-900 ">
@@ -34,7 +57,6 @@ export function OverviewTab({ transactions, dateRange }: OverviewTabProps) {
         </CardHeader>
         <CardContent>
           <SalesChart 
-            transactions={transactions}
             dateRange={dateRange}
           />
         </CardContent>
@@ -50,7 +72,7 @@ export function OverviewTab({ transactions, dateRange }: OverviewTabProps) {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <PurchaseTypeChart transactions={transactions} />
+            <PurchaseTypeChart dateRange={dateRange} />
           </CardContent>
         </Card>
         
@@ -62,7 +84,7 @@ export function OverviewTab({ transactions, dateRange }: OverviewTabProps) {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <TopProducts transactions={transactions} />
+            <TopProducts dateRange={dateRange} />
           </CardContent>
         </Card>
       </div>

@@ -16,9 +16,10 @@ import { AdjustStockModal } from './AdjustStockModal';
 
 interface ProductDescriptionTabProps {
   product: Product;
+    onProductUpdate?: (updatedProduct: Product) => void;
 }
 
-export function ProductDescriptionTab({ product }: ProductDescriptionTabProps) {
+export function ProductDescriptionTab({ product, onProductUpdate }: ProductDescriptionTabProps) {
   const [selectedImage, setSelectedImage] = useState(product.images[0]);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showImagesModal, setShowImagesModal] = useState(false);
@@ -27,6 +28,13 @@ export function ProductDescriptionTab({ product }: ProductDescriptionTabProps) {
 
   const handleVariantImageClick = (image: string) => {
     setSelectedImage(image);
+  };
+
+
+    const handleProductSaved = (updatedProduct: Product) => {
+    if (onProductUpdate) {
+      onProductUpdate(updatedProduct);
+    }
   };
 
   return (
@@ -104,11 +112,11 @@ export function ProductDescriptionTab({ product }: ProductDescriptionTabProps) {
                 </div>
                 
                 <div className="flex items-center space-x-2">
-                  <Checkbox checked={product.hasVariations} disabled />
+                  <Checkbox checked={product.hasVariation} disabled />
                   <div>
                     <div className="font-medium">Has Variations</div>
                     <div className="text-sm text-gray-500">
-                      {product.hasVariations ? 'Multiple variants' : 'Single product'}
+                      {product.hasVariation ? 'Multiple variants' : 'Single product'}
                     </div>
                   </div>
                 </div>
@@ -137,14 +145,13 @@ export function ProductDescriptionTab({ product }: ProductDescriptionTabProps) {
               {product.variants?.map((variant: ProductVariant) => (
                 <div key={variant.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                   <div>
-                    <div className="font-medium">{variant.name}</div>
-                    <div className="text-sm text-gray-500">SKU: {variant.sku}</div>
+                    <div className="font-medium">{variant.sku}</div>
                   </div>
                   <div className="text-right">
                     <div className="font-bold">{variant.quantity} units</div>
                     <Badge variant={
                       variant.quantity === 0 ? "destructive" :
-                      variant.quantity <= variant.threshold ? "secondary" : "default"
+                      variant.quantity <= variant.threshold ? "secondary" : "secondary"
                     }>
                       {variant.quantity === 0 ? "Out of Stock" :
                        variant.quantity <= variant.threshold ? "Low Stock" : "In Stock"}
@@ -170,6 +177,7 @@ export function ProductDescriptionTab({ product }: ProductDescriptionTabProps) {
         product={product}
         open={showEditModal}
         onOpenChange={setShowEditModal}
+        onSave={handleProductSaved}
       />
       
       <EditImagesModal

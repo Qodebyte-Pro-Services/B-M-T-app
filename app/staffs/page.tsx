@@ -1,7 +1,7 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,94 +17,51 @@ import { Users, UserPlus, Eye, Trash2, Mail, Phone, MapPin, Key, Copy, CheckCirc
 import { InventoryLayout } from '../inventory/components/InventoryLayout';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { usePageGuard } from '../hooks/usePageGuard';
 
 type Staff = {
-  id: string;
+   admin_id: string;
   full_name: string;
-  username: string;
+  admin_role: string;
   email: string;
-  phone: string;
-  address: string;
-  state: string;
-  role: string;
-  status: 'active' | 'inactive';
+  username: string | null;
+  phone: string | null;
+  isVerified: boolean;
+  status: string | null;
+  address: string | null;
+  state: string | null;
+  last_login: string;
+  login_success_count: number;
+  twoFa_enabled: boolean;
   createdAt: string;
-  lastLogin?: string;
-  avatar?: string;
+  updatedAt: string;
+  Role: {
+    roles_id: string;
+    role_name: string;
+    permissions: string[];
+  };
 };
 
 type Role = {
-  id: string;
-  name: string;
+  roles_id: string;
+  role_name: string;
   permissions: string[];
-  userCount: number;
+  role_count: number;
 };
 
 export default function StaffPage() {
+   usePageGuard();
   const router = useRouter();
-  const [staffs, setStaffs] = useState<Staff[]>([
-    {
-      id: 'staff-1',
-      full_name: 'John Doe',
-      username: 'johndoe',
-      email: 'john@business.com',
-      phone: '+234 123 456 7890',
-      address: '123 Business Street',
-      state: 'Lagos',
-      role: 'Administrator',
-      status: 'active',
-      createdAt: '2024-01-01',
-      lastLogin: '2024-01-15 10:30 AM',
-    },
-    {
-      id: 'staff-2',
-      full_name: 'Jane Smith',
-      username: 'janesmith',
-      email: 'jane@business.com',
-      phone: '+234 098 765 4321',
-      address: '456 Office Avenue',
-      state: 'Abuja',
-      role: 'Manager',
-      status: 'active',
-      createdAt: '2024-01-15',
-      lastLogin: '2024-01-14 02:15 PM',
-    },
-    {
-      id: 'staff-3',
-      full_name: 'Robert Johnson',
-      username: 'robertj',
-      email: 'robert@business.com',
-      phone: '+234 112 233 4455',
-      address: '789 Work Road',
-      state: 'Port Harcourt',
-      role: 'Sales Staff',
-      status: 'active',
-      createdAt: '2024-02-01',
-      lastLogin: '2024-01-16 09:45 AM',
-    },
-    {
-      id: 'staff-4',
-      full_name: 'Sarah Williams',
-      username: 'sarahw',
-      email: 'sarah@business.com',
-      phone: '+234 556 677 8899',
-      address: '321 Job Lane',
-      state: 'Ibadan',
-      role: 'Sales Staff',
-      status: 'inactive',
-      createdAt: '2024-02-10',
-    },
-  ]);
+  const [staffs, setStaffs] = useState<Staff[]>([]);
 
-  const [roles, setRoles] = useState<Role[]>([
-    { id: 'role-1', name: 'Administrator', permissions: ['all'], userCount: 1 },
-    { id: 'role-2', name: 'Manager', permissions: ['products', 'sales', 'customers'], userCount: 3 },
-    { id: 'role-3', name: 'Sales Staff', permissions: ['sales', 'customers'], userCount: 5 },
-    { id: 'role-4', name: 'Inventory Manager', permissions: ['products', 'stock'], userCount: 2 },
-  ]);
+  const [roles, setRoles] = useState<Role[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
 
   const ITEMS_PER_PAGE = 5;
+  const [totalStaffs, setTotalStaffs] = useState(0);
+  const [kpiLoading, setKpiLoading] = useState(false);
 
 const [currentPage, setCurrentPage] = useState(1);
 
@@ -114,6 +71,101 @@ const paginatedStaffs = staffs.slice(
   (currentPage - 1) * ITEMS_PER_PAGE,
   currentPage * ITEMS_PER_PAGE
 );
+
+  const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://primelabs.maskiadmin-management.com/api';
+
+  const getAuthToken = () => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('adminToken');
+    }
+    return null;
+  };
+
+
+   const fetchStaffs = async () => {
+    try {
+      const token = getAuthToken();
+      if (!token) throw new Error('No authentication token found');
+
+      const response = await fetch(`${apiUrl}/auth`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch staffs: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+
+      const transformedStaffs = data.admins.map((admin: Staff) => ({
+        admin_id: admin.admin_id,
+        full_name: admin.full_name,
+        username: admin.username,
+        email: admin.email,
+        phone: admin.phone || 'N/A',
+        address: admin.address || 'N/A',
+        state: admin.state || 'N/A',
+        Role: admin.Role || [],
+        createdAt: new Date(admin.createdAt).toLocaleDateString('en-US'),
+        lastLogin: admin.last_login 
+          ? new Date(admin.last_login).toLocaleString('en-US')
+          : 'Never',
+      }));
+      toast.success('Staff data fetched successfully');
+      setStaffs(transformedStaffs);
+      setTotalStaffs(transformedStaffs.length);
+      setError(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to fetch staffs';
+      console.error('Error fetching staffs:', err);
+      setError(message);
+        toast.error(message);
+    }
+  };
+
+ 
+const fetchRoles = async () => {
+  try {
+    const token = getAuthToken();
+    if (!token) throw new Error("No authentication token found");
+
+    const response = await fetch(`${apiUrl}/roles?page=1&limit=100`, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch roles: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+   
+    const transformedRoles: Role[] = data.roles.map((role: Role) => ({
+      roles_id: role.roles_id,
+      role_name: role.role_name,
+      permissions: Array.isArray(role.permissions) ? role.permissions : [],
+      role_count: role.role_count || 0,
+    }));
+
+    setRoles(transformedRoles);
+    setError(null);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to fetch roles";
+    console.error("Error fetching roles:", err);
+    setError(message);
+    toast.error(message);
+  }
+};
+
 
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [newStaff, setNewStaff] = useState({
@@ -170,90 +222,123 @@ const handleInputChange = (field: string, value: string) => {
   }
 };
  
-  const handleAddStaff = () => {
-    if (!newStaff.full_name || !newStaff.email || !newStaff.role) {
-      toast('Please fill in all required fields');
-      return;
-    }
+ const handleAddStaff = async () => {
+  const token = getAuthToken();
+  if (!token) return toast.error("No auth token found.");
 
-    const finalPassword = newStaff.generatePassword ? generatedPassword : newStaff.customPassword;
-    if (!finalPassword) {
-      toast('Please set a password for the staff');
-      return;
-    }
+  try {
+    const password = newStaff.generatePassword 
+      ? generateRandomPassword() 
+      : newStaff.customPassword;
 
-    const newStaffObj: Staff = {
-      id: `staff-${Date.now()}`,
+    const roleObj = roles.find(r => r.role_name === newStaff.role);
+    if (!roleObj) return toast.error("Please select a valid role");
+
+    const payload = {
       full_name: newStaff.full_name,
-      username: generatedUsername,
       email: newStaff.email,
+      admin_role: roleObj.roles_id,
       phone: newStaff.phone,
       address: newStaff.address,
       state: newStaff.state,
-      role: newStaff.role,
-      status: 'active',
-      createdAt: new Date().toISOString().split('T')[0],
+      username: generatedUsername,
+      password: password,
     };
 
-    setStaffs([...staffs, newStaffObj]);
-    
- 
-    setRoles(roles.map(role => 
-      role.name === newStaff.role 
-        ? { ...role, userCount: role.userCount + 1 }
-        : role
-    ));
+    const response = await fetch(`${apiUrl}/auth/add-admin`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
 
- 
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || "Failed to add staff");
+    }
+
+    toast.success("Staff added successfully!");
+   setStaffs(prev => [
+  ...prev,
+  {
+    admin_id: data.admin_id || `temp-${Date.now()}`, 
+    full_name: newStaff.full_name,
+    admin_role: roleObj.roles_id,
+    email: newStaff.email,
+    username: generatedUsername,
+    phone: newStaff.phone || null,
+    isVerified: false,
+    status: null,
+    address: newStaff.address || null,
+    state: newStaff.state || null,
+    last_login: "Never",
+    login_success_count: 0,
+    twoFa_enabled: false,
+    createdAt: new Date().toLocaleDateString("en-US"),
+    updatedAt: new Date().toLocaleDateString("en-US"),
+    Role: roleObj,
+  },
+]);
+
+
+   
     setNewStaff({
-      full_name: '',
-      email: '',
-      phone: '',
-      address: '',
-      state: '',
-      role: '',
+      full_name: "",
+      email: "",
+      phone: "",
+      address: "",
+      state: "",
+      role: "",
       generatePassword: true,
-      customPassword: '',
+      customPassword: "",
       sendCredentials: true,
     });
-    setGeneratedUsername('');
-    setGeneratedPassword('');
+    setGeneratedUsername("");
+    setGeneratedPassword("");
     setIsAddDialogOpen(false);
-    setCurrentPage(1);
 
-  
-    if (newStaff.sendCredentials) {
-      toast(`Staff created successfully!\n\nCredentials:\nUsername: ${generatedUsername}\nPassword: ${finalPassword}\n\nPlease share these credentials with the staff member.`);
-    } else {
-      toast('Staff created successfully!');
-    }
-  };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to add staff";
+    console.error(err);
+    toast.error(message);
+  }
+};
+
 
  
-  const handleDeleteStaff = (id: string) => {
-    const staff = staffs.find(s => s.id === id);
-    if (!staff) return;
-    
-    if (confirm(`Are you sure you want to delete ${staff.full_name}?`)) {
-    
-      setRoles(roles.map(role => 
-        role.name === staff.role 
-          ? { ...role, userCount: Math.max(0, role.userCount - 1) }
-          : role
-      ));
-      
-     setStaffs(prev => {
-  const updated = prev.filter(staff => staff.id !== id);
+ const handleDeleteStaff = async (id: string) => {
+  const token = getAuthToken();
+  if (!token) return toast.error("No auth token found.");
 
-  const newTotalPages = Math.ceil(updated.length / ITEMS_PER_PAGE);
-  if (currentPage > newTotalPages) {
-    setCurrentPage(Math.max(1, newTotalPages));
-  }
+  if (!confirm("Are you sure you want to delete this staff member?")) return;
 
-  return updated;
-});
+  try {
+    const response = await fetch(`${apiUrl}/auth/${id}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || "Failed to delete staff");
     }
-  };
+
+    toast.success("Staff deleted successfully!");
+    setStaffs(prev => prev.filter(staff => staff.admin_id !== id));
+
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to delete staff";
+    console.error(err);
+    toast.error(message);
+  }
+};
+
 
 
   const handleViewStaff = (id: string) => {
@@ -274,8 +359,60 @@ const handleInputChange = (field: string, value: string) => {
   };
 
 
-  const totalStaffs = staffs.length;
+  const fetchStaffKPI = async () => {
+    setKpiLoading(true);
+    try {
+      const token = localStorage.getItem('adminToken');
+      if (!token) throw new Error('No authentication token found');
+
+      const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://primelabs.maskiadmin-management.com/api';
+      const response = await fetch(`${apiUrl}/analytics/admin-count`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch staff KPI');
+
+      const data = await response.json();
+      if (data.success) {
+        setTotalStaffs(data.admin_count.total_admins);
+      }
+    } catch (err) {
+      console.error('Error fetching staff KPI:', err);
+      setTotalStaffs(staffs.length);
+    } finally {
+      setKpiLoading(false);
+    }
+  };
+
  
+useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      await Promise.all([
+        fetchStaffs(),
+        fetchRoles(),
+        fetchStaffKPI(),
+      ]);
+      setLoading(false);
+    };
+
+    loadData();
+  }, []);
+
+
+
+
+ 
+  useEffect(() => {
+    if (staffs.length > 0) {
+      setTotalStaffs(staffs.length);
+    }
+  }, [staffs]);
+ 
+
 
   return (
     <InventoryLayout>
@@ -365,30 +502,33 @@ const handleInputChange = (field: string, value: string) => {
                   <Label htmlFor="role">
                     Role <span className="text-red-500">*</span>
                   </Label>
-                  <Select value={newStaff.role} onValueChange={(value) => handleInputChange('role', value)}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select a role" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {roles.map(role => (
-                        <SelectItem key={role.id} value={role.name}>
-                          {role.name} ({role.userCount} users)
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                 <Select value={newStaff.role} onValueChange={(value) => handleInputChange('role', value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a role" />
+                </SelectTrigger>
+                <SelectContent>
+  {roles.map((role) => (
+    <SelectItem key={role.roles_id} value={role.role_name}>
+      {role.role_name}
+    </SelectItem>
+  ))}
+                </SelectContent>
+              </Select>
+
                   
                   {newStaff.role && (
                     <div className="mt-2 p-3 bg-gray-800 rounded-lg">
                       <p className="text-sm font-medium mb-1">Role Permissions:</p>
                       <div className="flex flex-wrap gap-1">
-                        {roles
-                          .find(r => r.name === newStaff.role)
-                          ?.permissions.map((perm, index) => (
-                            <Badge key={index} variant="outline" className="text-xs">
-                              {perm}
-                            </Badge>
-                          ))}
+                      {roles
+  .find(r => r.role_name === newStaff.role)
+  ?.permissions.map((perm, idx) => (
+    <Badge key={`${perm}-${idx}`} variant="outline" className="text-xs">
+      {perm}
+    </Badge>
+))}
+
+
                       </div>
                     </div>
                   )}
@@ -552,9 +692,9 @@ const handleInputChange = (field: string, value: string) => {
 
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <KPICard
+    <KPICard
             title="Total Staff"
-            value={totalStaffs.toString()}
+            value={kpiLoading ? 'Loading...' : totalStaffs.toString()}
             icon={<Users className="w-5 h-5" />}
             description="All staff members"
           />
@@ -571,21 +711,18 @@ const handleInputChange = (field: string, value: string) => {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Staff Member</TableHead>
-                    <TableHead>Username</TableHead>
                     <TableHead>Contact</TableHead>
                     <TableHead>Address</TableHead>
                     <TableHead>Role</TableHead>
-                    <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {paginatedStaffs.map((staff) => (
-                    <TableRow key={staff.id}>
+                    <TableRow key={staff.admin_id}>
                       <TableCell>
                         <div className="flex items-center gap-3">
                           <Avatar className="h-8 w-8">
-                            <AvatarImage src={staff.avatar} />
                             <AvatarFallback>
                               {staff.full_name.split(' ')[0][0]}{staff.full_name.split(' ')[1][0]}
                             </AvatarFallback>
@@ -596,7 +733,6 @@ const handleInputChange = (field: string, value: string) => {
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="font-mono text-sm">{staff.username}</TableCell>
                       <TableCell>
                         <div className="space-y-1">
                           <div className="flex items-center gap-1 text-sm">
@@ -620,27 +756,19 @@ const handleInputChange = (field: string, value: string) => {
                       </TableCell>
                       <TableCell>
                         <Badge variant={
-                          staff.role === 'Administrator' ? 'default' : 
-                          staff.role === 'Manager' ? 'secondary' : 'outline'
+                          staff.Role?.role_name === 'Administrator' ? 'default' : 
+                          staff.Role?.role_name === 'Manager' ? 'secondary' : 'outline'
                         }>
-                          {staff.role}
+                          {staff.Role?.role_name || 'No Role'}
                         </Badge>
                       </TableCell>
-                      <TableCell>
-                        <Badge className={
-                          staff.status === 'active' 
-                            ? 'bg-green-100 text-green-800' 
-                            : 'bg-gray-100 text-gray-800'
-                        }>
-                          {staff.status === 'active' ? 'Active' : 'Inactive'}
-                        </Badge>
-                      </TableCell>
+                     
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleViewStaff(staff.id)}
+                            onClick={() => handleViewStaff(staff.admin_id)}
                           >
                             <Eye className="w-4 h-4 mr-1" />
                             View
@@ -648,9 +776,9 @@ const handleInputChange = (field: string, value: string) => {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleDeleteStaff(staff.id)}
+                            onClick={() => handleDeleteStaff(staff.admin_id)}
                             className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                            disabled={staff.role === 'Administrator'}
+                            disabled={staff.Role?.role_name === 'Administrator'}
                           >
                             <Trash2 className="w-4 h-4" />
                           </Button>

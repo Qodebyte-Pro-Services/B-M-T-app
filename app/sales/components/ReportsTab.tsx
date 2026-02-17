@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -17,6 +17,9 @@ import {
   Divide
 } from "lucide-react";
 import { Transaction } from '@/app/utils/type';
+import { generateSalesReport, getMiniAdminList, SalesReportApiResponse,  } from '@/app/lib/api';
+import { toast } from 'sonner';
+import { id } from 'date-fns/locale';
 
 type DateRange = {
   filter: string;
@@ -24,9 +27,137 @@ type DateRange = {
   endDate: string;
 };
 
-// Define proper types for reports
+
 type ReportFormat = 'json' | 'csv' | 'pdf' | 'excel';
-type ReportType = 'daily' | 'weekly' | 'monthly' | 'yearly';
+type ReportType = 'day' | 'week' | 'month' | 'year';
+
+
+interface ReportTypeOption {
+  value: ReportType;
+  label: string;
+}
+
+
+interface ViewReadySalesReport {
+  meta: {
+    period: string;
+    startDate: string;
+    endDate: string;
+    generatedAt: string;
+    cashier: string;
+  };
+
+  summary: {
+    totalSales: number;
+    totalTax: number;
+    totalDiscounts: number;
+    totalItems: number;
+    totalTransactions: number;
+    averageTicket: number;
+  };
+
+  purchaseType: {
+    inStore: number;   // %
+    online: number;    // %
+  };
+
+  paymentMethods: {
+    cash: number;      // %
+    card: number;
+    transfer: number;
+    split: number;
+    installment: number;
+    credit: number;
+  };
+
+  installments: {
+    count: number;
+    active: number;
+    totalValue: number;
+    downPayments: number;
+    remainingBalance: number;
+  };
+
+  credit: {
+    count: number;
+    totalValue: number;
+    outstandingBalance: number;
+  };
+
+  transactions: Array<{
+    id: number;
+    timestamp: string;
+    customer: {
+      id: string;
+      name: string;
+    };
+    items: {
+      id: number;
+      variantId: number;
+      quantity: number;
+      unitPrice: number;
+    }[];
+    paymentMethod: string;
+    purchaseType: "in-store" | "online";
+    total: number;
+    tax: number;
+    discount: number;
+    installmentPlan?: {
+      downPayment: number;
+      remainingBalance: number;
+    };
+    credit?: {
+      creditBalance: number;
+    };
+  }>;
+}
+
+interface ApiOrderItem {
+  id: number;
+  product_id: number;
+  variant_id: number;
+  product_name: string;
+  variant_name: string;
+  sku: string;
+  price: number | string;
+  quantity: number;
+  taxable: boolean;
+  image_url?: string;
+}
+
+interface ApiOrder {
+  id: number;
+  createdAt: string;
+  subtotal: number | string;
+  tax: number | string;
+  total_amount: number | string;
+  discount_total?: number | string;
+
+  Customer: {
+    id: string;
+    name: string;
+  };
+
+  OrderItems: ApiOrderItem[];
+
+  OrderPayment?: {
+    method: 'cash' | 'card' | 'transfer' | 'split';
+  }[];
+
+  CreditAccount?: {
+    creditBalance: number;
+  };
+
+  InstallmentPlan?: {
+    numberOfPayments: number;
+    amountPerPayment: number;
+    paymentFrequency: string;
+    startDate: string;
+    notes?: string;
+    downPayment: number;
+    remainingBalance: number;
+  };
+}
 
 interface GeneratedReport {
   id: string;
@@ -44,7 +175,9 @@ interface GeneratedReport {
     includeProductBreakdown: boolean;
     cashier: string;
   };
+  apiData?: SalesReportApiResponse; 
 }
+
 
 interface Cashier {
   id: string;
@@ -62,7 +195,10 @@ interface ReportsTabProps {
 }
 
 export function ReportsTab({ transactions, dateRange }: ReportsTabProps) {
-  const [reportType, setReportType] = useState<ReportType>('daily');
+   const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [reportType, setReportType] = useState<ReportType>('day');
   const [reportStartDate, setReportStartDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [reportEndDate, setReportEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [reportFormat, setReportFormat] = useState<ReportFormat>('json');
@@ -74,19 +210,31 @@ export function ReportsTab({ transactions, dateRange }: ReportsTabProps) {
   const [generatedReports, setGeneratedReports] = useState<GeneratedReport[]>([]);
     const [hasAttemptedGenerate, setHasAttemptedGenerate] = useState<boolean>(false);
 
-  const reportTypes: ReportTypeOption[] = [
-    { value: 'daily', label: 'Daily Sales' },
-    { value: 'weekly', label: 'Weekly Sales' },
-    { value: 'monthly', label: 'Monthly Sales' },
-    { value: 'yearly', label: 'Yearly Sales' },
-  ];
+const reportTypes: ReportTypeOption[] = [
+  { value: 'day', label: 'Daily Sales' },
+  { value: 'week', label: 'Weekly Sales' },
+  { value: 'month', label: 'Monthly Sales' },
+  { value: 'year', label: 'Yearly Sales' },
+];
 
-  const cashiers: Cashier[] = [
-    { id: 'all', name: 'All Cashiers' },
-    { id: 'cashier-1', name: 'John Doe' },
-    { id: 'cashier-2', name: 'Jane Smith' },
-    { id: 'cashier-3', name: 'Robert Johnson' },
-  ];
+
+const [cashiers, setCashiers] = useState<Cashier[]>([
+  { id: 'all', name: 'All Cashiers' }
+]);
+
+useEffect(() => {
+  getMiniAdminList()
+    .then(res => {
+      const admins = res.admins.map(a => ({
+        id: a.admin_id,
+        name: a.full_name
+      }));
+      setCashiers([{ id: 'all', name: 'All Cashiers' }, ...admins]);
+    })
+    .catch(() => {
+      setCashiers([{ id: 'all', name: 'All Cashiers' }]);
+    });
+}, []);
 
   const formatDate = (dateString: string): string => {
     const date = new Date(dateString);
@@ -99,236 +247,274 @@ export function ReportsTab({ transactions, dateRange }: ReportsTabProps) {
 
   const getReportTitle = (type: ReportType): string => {
     switch (type) {
-      case 'daily': return 'Daily';
-      case 'weekly': return 'Weekly';
-      case 'monthly': return 'Monthly';
-      case 'yearly': return 'Yearly';
+      case 'day': return 'Daily';
+      case 'week': return 'Weekly';
+      case 'month': return 'Monthly';
+      case 'year': return 'Yearly';
       default: return 'Sales';
     }
   };
 
-  const generateReport = (): void => {
-     setHasAttemptedGenerate(true); 
-    const start = new Date(reportStartDate);
-    const end = new Date(reportEndDate);
+  const generateReport = async (): Promise<void> => {
+    setHasAttemptedGenerate(true);
+    setIsGenerating(true);
+    setError(null);
+
+    try {
+      const start = new Date(reportStartDate);
+      const end = new Date(reportEndDate);
+      const reportTitle = getReportTitle(reportType);
+
     
-    const reports: GeneratedReport[] = [];
-    const reportTitle = getReportTitle(reportType);
-    
-    if (reportType === 'daily') {
-      const diffDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
       
-      for (let i = 0; i <= diffDays; i++) {
-        const currentDate = new Date(start);
-        currentDate.setDate(start.getDate() + i);
-        const dateStr = currentDate.toISOString().split('T')[0];
-        
-        const dayTransactions = transactions.filter(t => {
-          const transactionDate = new Date(t.timestamp).toISOString().split('T')[0];
-          return transactionDate === dateStr;
-        });
-        
-        
-       if (dayTransactions.length > 0) {
-        const total = dayTransactions.reduce((sum, t) => sum + t.total, 0);
-        
-        reports.push({
-          id: `report-${Date.now()}-${i}`,
-          dateRange: formatDate(dateStr),
-          type: reportTitle,
-          startDate: dateStr,
-          endDate: dateStr,
-          format: reportFormat,
-          transactions: dayTransactions.length,
-          total: total,
-          filters: {
-            includeSummary,
-            includeDetails,
-            includePaymentMethods,
-            includeProductBreakdown,
-            cashier: selectedCashier,
-          }
-        });
+
+      // Check if custom date range
+      const isCustom = reportStartDate !== reportEndDate || 
+        (new Date(reportStartDate).toDateString() !== new Date().toDateString());
+
+      const response = (await generateSalesReport(
+        isCustom ? 'custom' : reportType,
+        reportStartDate,
+        reportEndDate,
+        {
+          summary: includeSummary,
+          details: includeDetails,
+          payment_methods: includePaymentMethods,
+          product_breakdown: includeProductBreakdown,
+          cashier: selectedCashier !== 'all' ? selectedCashier : undefined,
+          format: 'json',
+        }
+      )) as SalesReportApiResponse;
+
+      if (!response || response.transactions === undefined) {
+        throw new Error('Invalid response from server');
       }
-    }
-  }  else if (reportType === 'weekly') {
-      const current = new Date(start);
-      let weekNumber = 1;
-      
-      while (current <= end) {
-        const weekStart = new Date(current);
-        const weekEnd = new Date(current);
-        weekEnd.setDate(weekStart.getDate() + 6);
-        
-        const weekTransactions = transactions.filter(t => {
-          const transactionDate = new Date(t.timestamp);
-          return transactionDate >= weekStart && transactionDate <= weekEnd;
-        });
-        
-       if (weekTransactions.length > 0) {
-        const total = weekTransactions.reduce((sum, t) => sum + t.total, 0);
-        
-        reports.push({
-          id: `report-${Date.now()}-${weekNumber}`,
-          dateRange: `Week ${weekNumber} (${formatDate(weekStart.toISOString().split('T')[0])} - ${formatDate(weekEnd.toISOString().split('T')[0])})`,
-          type: reportTitle,
-          startDate: weekStart.toISOString().split('T')[0],
-          endDate: weekEnd.toISOString().split('T')[0],
-          format: reportFormat,
-          transactions: weekTransactions.length,
-          total: total,
-          filters: {
-            includeSummary,
-            includeDetails,
-            includePaymentMethods,
-            includeProductBreakdown,
-            cashier: selectedCashier,
+
+      // Transform API response to match GeneratedReport format
+      const reports: GeneratedReport[] = [];
+
+      if (reportType === 'day' || isCustom) {
+        const diffDays = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+
+        for (let i = 0; i <= diffDays; i++) {
+          const currentDate = new Date(start);
+          currentDate.setDate(start.getDate() + i);
+          const dateStr = currentDate.toISOString().split('T')[0];
+
+        const dayTransactions = response.transactions.filter(t => {
+  if ( !t.timestamp) return false;
+const d = new Date( t.timestamp);
+  if (isNaN(d.getTime())) return false;
+  const transactionDate = d.toISOString().split('T')[0];
+  return transactionDate === dateStr;
+});
+          if (dayTransactions.length > 0) {
+            const total = dayTransactions.reduce((sum, t) => sum + Number(t.total), 0);
+
+            reports.push({
+              id: `report-${Date.now()}-${i}`,
+              dateRange: formatDate(dateStr),
+              type: reportTitle,
+              startDate: dateStr,
+              endDate: dateStr,
+              format: reportFormat,
+              transactions: dayTransactions.length,
+              total: total,
+              filters: {
+                includeSummary,
+                includeDetails,
+                includePaymentMethods,
+                includeProductBreakdown,
+                cashier: selectedCashier,
+              },
+              apiData: response, 
+            });
           }
-        });
-      }
-      
-      weekNumber++;
-      current.setDate(current.getDate() + 7);
-    }
-  } else if (reportType === 'monthly') {
-      const current = new Date(start.getFullYear(), start.getMonth(), 1);
-      const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
-      
-      while (current <= endMonth) {
-        const monthStart = new Date(current);
-        const monthEnd = new Date(current.getFullYear(), current.getMonth() + 1, 0);
-        
-        const monthTransactions = transactions.filter(t => {
-          const transactionDate = new Date(t.timestamp);
-          return transactionDate >= monthStart && transactionDate <= monthEnd;
-        });
-        
-       if (monthTransactions.length > 0) {
-        const total = monthTransactions.reduce((sum, t) => sum + t.total, 0);
-        
-        const monthName = monthStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-        
-        reports.push({
-          id: `report-${Date.now()}-${monthStart.getMonth()}`,
-          dateRange: monthName,
-          type: reportTitle,
-          startDate: monthStart.toISOString().split('T')[0],
-          endDate: monthEnd.toISOString().split('T')[0],
-          format: reportFormat,
-          transactions: monthTransactions.length,
-          total: total,
-          filters: {
-            includeSummary,
-            includeDetails,
-            includePaymentMethods,
-            includeProductBreakdown,
-            cashier: selectedCashier,
+        }
+      } else if (reportType === 'week') {
+        const current = new Date(start);
+        let weekNumber = 1;
+
+        while (current <= end) {
+          const weekStart = new Date(current);
+          const weekEnd = new Date(current);
+          weekEnd.setDate(weekStart.getDate() + 6);
+
+          const weekTransactions = response.transactions.filter(t => {
+            const transactionDate = new Date(t.timestamp);
+            return transactionDate >= weekStart && transactionDate <= weekEnd;
+          });
+
+          if (weekTransactions.length > 0) {
+            const total = weekTransactions.reduce((sum, t) => sum + Number(t.total), 0);
+
+            reports.push({
+              id: `report-${Date.now()}-${weekNumber}`,
+              dateRange: `Week ${weekNumber} (${formatDate(weekStart.toISOString().split('T')[0])} - ${formatDate(weekEnd.toISOString().split('T')[0])})`,
+              type: reportTitle,
+              startDate: weekStart.toISOString().split('T')[0],
+              endDate: weekEnd.toISOString().split('T')[0],
+              format: reportFormat,
+              transactions: weekTransactions.length,
+              total: total,
+              filters: {
+                includeSummary,
+                includeDetails,
+                includePaymentMethods,
+                includeProductBreakdown,
+                cashier: selectedCashier,
+              },
+              apiData: response,
+            });
           }
-        });
-      }
-      
-      current.setMonth(current.getMonth() + 1);
-    }
-  } else if (reportType === 'yearly') {
-      for (let year = start.getFullYear(); year <= end.getFullYear(); year++) {
-        const yearStart = new Date(year, 0, 1);
-        const yearEnd = new Date(year, 11, 31);
-        
-        const yearTransactions = transactions.filter(t => {
-          const transactionDate = new Date(t.timestamp);
-          return transactionDate.getFullYear() === year;
-        });
-        
-      if (yearTransactions.length > 0) {
-        const total = yearTransactions.reduce((sum, t) => sum + t.total, 0);
-        
-        reports.push({
-          id: `report-${Date.now()}-${year}`,
-          dateRange: year.toString(),
-          type: reportTitle,
-          startDate: yearStart.toISOString().split('T')[0],
-          endDate: yearEnd.toISOString().split('T')[0],
-          format: reportFormat,
-          transactions: yearTransactions.length,
-          total: total,
-          filters: {
-            includeSummary,
-            includeDetails,
-            includePaymentMethods,
-            includeProductBreakdown,
-            cashier: selectedCashier,
+
+          weekNumber++;
+          current.setDate(current.getDate() + 7);
+        }
+      } else if (reportType === 'month') {
+        const current = new Date(start.getFullYear(), start.getMonth(), 1);
+        const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+
+        while (current <= endMonth) {
+          const monthStart = new Date(current);
+          const monthEnd = new Date(current.getFullYear(), current.getMonth() + 1, 0);
+
+          const monthTransactions = response.transactions.filter(t => {
+            const transactionDate = new Date(t.timestamp);
+            return transactionDate >= monthStart && transactionDate <= monthEnd;
+          });
+
+          if (monthTransactions.length > 0) {
+            const total = monthTransactions.reduce((sum, t) => sum + Number(t.total), 0);
+            const monthName = monthStart.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+            reports.push({
+              id: `report-${Date.now()}-${monthStart.getMonth()}`,
+              dateRange: monthName,
+              type: reportTitle,
+              startDate: monthStart.toISOString().split('T')[0],
+              endDate: monthEnd.toISOString().split('T')[0],
+              format: reportFormat,
+              transactions: monthTransactions.length,
+              total: total,
+              filters: {
+                includeSummary,
+                includeDetails,
+                includePaymentMethods,
+                includeProductBreakdown,
+                cashier: selectedCashier,
+              },
+              apiData: response,
+            });
           }
-        });
+
+          current.setMonth(current.getMonth() + 1);
+        }
+      } else if (reportType === 'year') {
+        for (let year = start.getFullYear(); year <= end.getFullYear(); year++) {
+          const yearStart = new Date(year, 0, 1);
+          const yearEnd = new Date(year, 11, 31);
+
+          const yearTransactions = response.transactions.filter(t => {
+            const transactionDate = new Date(t.timestamp);
+            return transactionDate.getFullYear() === year;
+          });
+
+          if (yearTransactions.length > 0) {
+            const total = yearTransactions.reduce((sum, t) => sum + Number(t.total), 0);
+
+            reports.push({
+              id: `report-${Date.now()}-${year}`,
+              dateRange: year.toString(),
+              type: reportTitle,
+              startDate: yearStart.toISOString().split('T')[0],
+              endDate: yearEnd.toISOString().split('T')[0],
+              format: reportFormat,
+              transactions: yearTransactions.length,
+              total: total,
+              filters: {
+                includeSummary,
+                includeDetails,
+                includePaymentMethods,
+                includeProductBreakdown,
+                cashier: selectedCashier,
+              },
+              apiData: response,
+            });
+          }
+        }
       }
+
+      if (reports.length === 0) {
+        setError('No transactions found for the selected period');
+      } else {
+        setGeneratedReports(reports);
+      }
+    } catch (err) {
+      console.error('Failed to generate report:', err);
+      setError((err as Error).message || 'Failed to generate report');
+    } finally {
+      setIsGenerating(false);
     }
-  }
-  
-  setGeneratedReports(reports);
-};
+  };
+
 
 const viewReport = (report: GeneratedReport): void => {
-  const filteredTransactions = transactions.filter(t => {
-    const transactionDate = new Date(t.timestamp);
-    const startDate = new Date(report.startDate);
-    const endDate = new Date(report.endDate);
-    return transactionDate >= startDate && transactionDate <= endDate;
-  });
+  if (!report.apiData || !report.apiData.transactions) {
+    toast("No detailed data found for this report.");
+    return;
+  }
   
  
   const reportWindow = window.open('', '_blank', 'width=1400,height=800');
   if (!reportWindow) return;
   
+ const todaysTransactions = report.apiData.transactions;
 
-  const todaysTransactions = filteredTransactions;
   const totalSales = todaysTransactions.reduce((sum, t) => sum + t.total, 0);
   const totalTax = todaysTransactions.reduce((sum, t) => sum + t.tax, 0);
   const totalItems = todaysTransactions.reduce(
     (sum, t) => sum + t.items.reduce((itemSum, item) => itemSum + item.quantity, 0),
     0
   );
-  const totalDiscounts = todaysTransactions.reduce((sum, t) => sum + (t.totalDiscount || 0), 0);
-  
+  const totalDiscounts = todaysTransactions.reduce((sum, t) => sum + (t.discount || 0), 0);
+
   const purchaseTypeCounts = todaysTransactions.reduce((acc, t) => {
     const type = t.purchaseType || 'in-store';
     acc[type] = (acc[type] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
-  
+
   const paymentMethodCounts = todaysTransactions.reduce((acc, t) => {
     acc[t.paymentMethod] = (acc[t.paymentMethod] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
-  
+
   const installmentTransactions = todaysTransactions.filter(t => t.paymentMethod === 'installment');
   const totalInstallmentAmount = installmentTransactions.reduce((sum, t) => sum + t.total, 0);
-  const activeInstallments = installmentTransactions.filter(t => 
+  const activeInstallments = installmentTransactions.filter(t =>
     t.installmentPlan && t.installmentPlan.remainingBalance > 0
   ).length;
-  
+
   const creditTransactions = todaysTransactions.filter(t => t.paymentMethod === 'credit');
   const totalCreditValue = creditTransactions.reduce((sum, t) => sum + t.total, 0);
   const totalCreditBalance = creditTransactions.reduce(
-  (sum, t) => sum + (t.credit?.creditBalance || 0),
-  0
-);
-  const totalInstallmentValue = installmentTransactions.reduce((sum, t) => sum + t.total, 0);
-  const totalDownPayments = installmentTransactions.reduce((sum, t) => sum + (t.installmentPlan?.downPayment || 0), 0);
-  const totalInstallmentRemaining = installmentTransactions.reduce((sum, t) => sum + (t.installmentPlan?.remainingBalance || 0), 0);
-  
+    (sum, t) => sum + (t.credit?.creditBalance || 0),
+    0
+  );
+
   const totalTx = todaysTransactions.length;
   const purchaseTypeRatio = {
     inStore: totalTx > 0 ? ((purchaseTypeCounts['in-store'] || 0) / totalTx) * 100 : 0,
     online: totalTx > 0 ? ((purchaseTypeCounts['online'] || 0) / totalTx) * 100 : 0,
   };
-  
+
   const paymentMethodRatio = {
     cash: totalTx > 0 ? ((paymentMethodCounts['cash'] || 0) / totalTx) * 100 : 0,
     card: totalTx > 0 ? ((paymentMethodCounts['card'] || 0) / totalTx) * 100 : 0,
     transfer: totalTx > 0 ? ((paymentMethodCounts['transfer'] || 0) / totalTx) * 100 : 0,
     split: totalTx > 0 ? ((paymentMethodCounts['split'] || 0) / totalTx) * 100 : 0,
   };
-  
-
   
  
   reportWindow.document.write(`
@@ -394,10 +580,10 @@ const viewReport = (report: GeneratedReport): void => {
             <div>
               <div class="flex items-center gap-3 mb-2">
                 <div class="h-10 w-10 bg-green-400 rounded-lg flex items-center justify-center">
-                  <span class="text-black font-bold text-sm">BMT</span>
+                  <span class="text-black font-bold text-sm">PL</span>
                 </div>
                 <div>
-                  <div class="font-bold text-gray-900 text-xl">Big Men Transaction Apparel</div>
+                  <div class="font-bold text-gray-900 text-xl">Prime Labs Apparel</div>
                   <div class="text-sm text-gray-600">${report.type} Sales Report</div>
                 </div>
               </div>
@@ -663,14 +849,14 @@ const viewReport = (report: GeneratedReport): void => {
           <div class="mt-6 pt-6 border-t border-gray-200 text-center text-sm text-gray-500">
             <div class="flex flex-col items-center gap-2">
               <div class="flex items-center gap-4">
-                <div>Report generated by Big Men Transaction Apparel</div>
+                <div>Report generated by Prime Labs Apparel</div>
                 <div>•</div>
-                <div>For inquiries: contact@bigmenapparel.com</div>
+                <div>For inquiries: contact@primelabs.com</div>
                 <div>•</div>
                 <div>0800-BIG-MEN</div>
               </div>
               <div>Report ID: ${report.id} | Period: ${report.startDate} to ${report.endDate} | Type: ${report.type}</div>
-              <div class="text-xs mt-2">© ${new Date().getFullYear()} Big Men Transaction Apparel. All rights reserved.</div>
+              <div class="text-xs mt-2">© ${new Date().getFullYear()} Powered By PrimeLabs Business Solution. All rights reserved.</div>
             </div>
           </div>
         </div>
@@ -692,8 +878,14 @@ const viewReport = (report: GeneratedReport): void => {
 };
 
   const downloadReport = (report: GeneratedReport): void => {
+
+
+    if (!report.apiData || !report.apiData.transactions) {
+      toast("No detailed data found for this report.");
+      return;
+    }
  
-    const filteredTransactions = transactions.filter(t => {
+    const filteredTransactions = report.apiData.transactions.filter(t => {
       const transactionDate = new Date(t.timestamp);
       const startDate = new Date(report.startDate);
       const endDate = new Date(report.endDate);
@@ -707,46 +899,34 @@ const viewReport = (report: GeneratedReport): void => {
         timestamp: t.timestamp,
         customer: t.customer,
         items: t.items.map(i => ({
-          productName: i.productName,
-          variantName: i.variantName,
+          id: i.id,
+          productName: i.variantId,
           quantity: i.quantity,
-          price: i.price,
-          total: i.price * i.quantity,
+          price: i.unitPrice,
+          total: i.unitPrice * i.quantity,
         })),
-        subtotal: t.subtotal,
         tax: t.tax,
-        total: t.total,
-        paymentMethod: t.paymentMethod,
-        purchaseType: t.purchaseType,
-        totalDiscount: t.totalDiscount || 0,
+  total: t.total,
+  paymentMethod: t.paymentMethod,
+  purchaseType: t.purchaseType,
+  discount: t.discount || 0,
+  installmentPlan: t.installmentPlan,
+  credit: t.credit,
       })),
-      summary: {
-        totalTransactions: filteredTransactions.length,
-        totalRevenue: filteredTransactions.reduce((sum, t) => sum + t.total, 0),
-         totalDiscount: filteredTransactions.reduce((sum, t) => sum + (t.totalDiscount || 0), 0), 
-        averageTransaction: filteredTransactions.length > 0 
-          ? filteredTransactions.reduce((sum, t) => sum + t.total, 0) / filteredTransactions.length
-          : 0,
-      },
+     summary: {
+  totalTransactions: filteredTransactions.length,
+  totalRevenue: filteredTransactions.reduce((sum, t) => sum + t.total, 0),
+  totalDiscount: filteredTransactions.reduce((sum, t) => sum + (t.discount || 0), 0),
+  averageTransaction: filteredTransactions.length > 0
+    ? filteredTransactions.reduce((sum, t) => sum + t.total, 0) / filteredTransactions.length
+    : 0,
+},
       paymentMethodBreakdown: filteredTransactions.reduce((acc, t) => {
-        acc[t.paymentMethod] = (acc[t.paymentMethod] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>),
-      productBreakdown: filteredTransactions.reduce((acc, t) => {
-        t.items.forEach(item => {
-          const key = `${item.productName}-${item.variantName}`;
-          const existing = acc[key] || { 
-            productName: item.productName, 
-            variantName: item.variantName, 
-            quantity: 0, 
-            revenue: 0 
-          };
-          existing.quantity += item.quantity;
-          existing.revenue += item.price * item.quantity;
-          acc[key] = existing;
-        });
-        return acc;
-      }, {} as Record<string, { productName: string; variantName: string; quantity: number; revenue: number }>),
+    acc[t.paymentMethod] = (acc[t.paymentMethod] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>),
+  
+  productBreakdown: report.apiData?.product_breakdown ?? [],
     };
     
     
@@ -919,13 +1099,19 @@ const viewReport = (report: GeneratedReport): void => {
               </Select>
             </div>
             
-            <Button 
-              className="w-full bg-green-400 hover:bg-green-500 text-black"
-              onClick={generateReport}
-            >
-              <FileText className="h-4 w-4 mr-2" />
-              Generate Report
-            </Button>
+            {error && (
+            <div className="mb-4 p-3 bg-red-900/50 border border-red-600 rounded text-red-200 text-sm">
+              {error}
+            </div>
+          )}
+          <Button 
+            className="w-full bg-green-400 hover:bg-green-500 text-black"
+            onClick={generateReport}
+            disabled={isGenerating}
+          >
+            <FileText className="h-4 w-4 mr-2" />
+            {isGenerating ? 'Generating...' : 'Generate Report'}
+          </Button>
           </div>
         </CardContent>
       </Card>

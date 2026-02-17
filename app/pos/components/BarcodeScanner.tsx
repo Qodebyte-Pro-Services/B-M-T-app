@@ -21,66 +21,107 @@ export function BarcodeScanner({ onBarcodeScanned, isProcessing = false }: Barco
   const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);  
   const [inputMode, setInputMode] = useState<'scanner' | 'manual'>('scanner');
   const scanSpeedTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
+  const bufferRef = useRef<string>('');
+  const lastTimeRef = useRef<number>(0);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [scannerEnabled, setScannerEnabled] = useState(true);
 
   useEffect(() => {
     inputRef.current?.focus();
    
-    const handleWindowClick = () => {
-      if (document.activeElement !== inputRef.current) {
-        inputRef.current?.focus();
-      }
-    };
+   const handleWindowClick = () => {
+  const isModalOpen = document.querySelector('[role="dialog"]');
+  const activeElement = document.activeElement;
+
+  if (
+    isModalOpen ||
+    activeElement instanceof HTMLInputElement ||
+    activeElement instanceof HTMLTextAreaElement ||
+    activeElement instanceof HTMLSelectElement
+  ) {
+    return;
+  }
+
+  inputRef.current?.focus();
+};
+
+    
     window.addEventListener('click', handleWindowClick);
     return () => window.removeEventListener('click', handleWindowClick);
   }, []);
 
-useEffect(() => {
-  let buffer = '';
-  let lastTime = 0;
-  let timeout: NodeJS.Timeout;
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+       if (!scannerEnabled) return;
+  if (document.activeElement !== inputRef.current) return;
+      const now = Date.now();
 
-  const handleKeyDown = (e: KeyboardEvent) => {
-    const now = Date.now();
-
-    // Ignore if user is typing in an input (manual mode)
-    if (
-      document.activeElement instanceof HTMLInputElement ||
-      document.activeElement instanceof HTMLTextAreaElement
-    ) {
-      return;
-    }
-
-    if (e.key === 'Enter') {
-      if (buffer.length >= 4) {
-        onBarcodeScanned(buffer);
-        setScannerConnected(true);
+      // Check if a dialog/modal is open
+      const isModalOpen = document.querySelector('[role="dialog"]');
+      if (isModalOpen) {
+        return;
       }
-      buffer = '';
-      return;
-    }
 
-    if (e.key.length !== 1) return;
+      // Check if user is typing in an input field (other than barcode input)
+      const activeElement = document.activeElement;
+      if (
+        activeElement && 
+        activeElement !== inputRef.current &&
+        (activeElement instanceof HTMLInputElement ||
+         activeElement instanceof HTMLTextAreaElement ||
+         activeElement instanceof HTMLSelectElement)
+      ) {
+        return;
+      }
 
-    if (now - lastTime > 80) {
-      buffer = '';
-    }
+      if (e.key === 'Enter') {
+        if (bufferRef.current.length >= 4) {
+          onBarcodeScanned(bufferRef.current);
+          setScannerConnected(true);
+        }
+        bufferRef.current = '';
+        return;
+      }
 
-    buffer += e.key;
-    lastTime = now;
+      if (e.key.length !== 1) return;
 
-    clearTimeout(timeout);
-    timeout = setTimeout(() => {
-      buffer = '';
-    }, 120);
-  };
+      if (now - lastTimeRef.current > 80) {
+        bufferRef.current = '';
+      }
 
-  window.addEventListener('keydown', handleKeyDown);
+      bufferRef.current += e.key;
+      lastTimeRef.current = now;
+
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+
+      timeoutRef.current = setTimeout(() => {
+        bufferRef.current = '';
+      }, 120);
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+    };
+  }, [onBarcodeScanned]);
+
+  useEffect(() => {
+  const disable = () => setScannerEnabled(false);
+  const enable = () => setScannerEnabled(true);
+
+  window.addEventListener('disable-scanner', disable);
+  window.addEventListener('enable-scanner', enable);
+
   return () => {
-    window.removeEventListener('keydown', handleKeyDown);
-    clearTimeout(timeout);
+    window.removeEventListener('disable-scanner', disable);
+    window.removeEventListener('enable-scanner', enable);
   };
-}, [onBarcodeScanned]);
+}, []);
 
 
   const handleBarcodeInput = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -96,14 +137,12 @@ useEffect(() => {
         return;
       }
 
-      
       const barcodes = input
         .split(/[\s,]+/)
         .map(b => b.trim())
         .filter(b => b.length > 0);
 
       if (barcodes.length > 1) {
-       
         let addedCount = 0;
         let failedCount = 0;
         const failedBarcodes: string[] = [];
@@ -121,7 +160,6 @@ useEffect(() => {
           }
         });
 
-       
         if (addedCount > 0) {
           toast.success(`Added ${addedCount} item(s)`);
         }
@@ -129,7 +167,6 @@ useEffect(() => {
           toast.error(`Failed to add ${failedCount} item(s): ${failedBarcodes.join(', ')}`);
         }
       } else {
-       
         const scannedBarcode = barcodes[0];
 
         if (scannedBarcode.length < 3) {
@@ -140,7 +177,6 @@ useEffect(() => {
         onBarcodeScanned(scannedBarcode);
       }
 
-      
       setBarcode('');
       setLastScannedTime(0);
       setLastInputTime(0);
@@ -153,7 +189,7 @@ useEffect(() => {
       }
 
       if (timeSinceLastKey > 100 && barcode.length > 0) {
-      
+        // Barcode entry in progress
       }
     }
   };
@@ -162,10 +198,19 @@ useEffect(() => {
     const value = e.target.value;
     setBarcode(value);
     
-   
     if (value.length === 1) {
       setLastInputTime(Date.now());
     }
+  };
+
+  const handleInputFocus = () => {
+    if (barcode.length === 0) {
+      setInputMode('scanner');
+    }
+  };
+
+  const handleInputBlur = () => {
+    // Don't auto-focus when losing focus
   };
 
   return (
@@ -204,11 +249,8 @@ useEffect(() => {
           onKeyDown={(e) => {
             handleBarcodeInput(e);
           }}
-          onFocus={() => {
-            if (barcode.length === 0) {
-              setInputMode('scanner');
-            }
-          }}
+          onFocus={handleInputFocus}
+          onBlur={handleInputBlur}
           disabled={isProcessing}
           className="font-mono text-sm border-2 border-blue-300 focus:border-blue-600 focus:ring-2 focus:ring-blue-500"
           autoComplete="off"
@@ -228,7 +270,7 @@ useEffect(() => {
           <div>
             <strong>Scanner Tips:</strong>
             <ul className="list-disc list-inside mt-1 space-y-1">
-              <li>Keep this input field focused</li>
+              <li>Keep this input field focused for scanner mode</li>
               <li>Scan barcodes directly - Enter key is automatic</li>
               <li>Multiple scans increase quantity</li>
               {scannerConnected && (

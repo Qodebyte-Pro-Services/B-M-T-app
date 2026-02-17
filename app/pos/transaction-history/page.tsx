@@ -11,29 +11,32 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from 'sonner';
 import Link from 'next/link';
-import { Transaction } from '@/app/utils/type';
+import { Transaction, AdminDetail } from '@/app/utils/type';
 import { Receipt } from '../components/Receipt';
 import ReactDOMServer from 'react-dom/server';
-interface TransactionItem {
-  id: string;
-  productName: string;
-  variantName: string;
-  quantity: number;
-  price: number;
-}
 
 
 
 
 export default function DailyHistoryPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [dateFilter, setDateFilter] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [adminDetail, setAdminDetail] = useState<AdminDetail | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
 
 
   
   useEffect(() => {
+    // Load admin detail from localStorage
+    const storedAdminDetail = localStorage.getItem('adminDetail');
+    if (storedAdminDetail) {
+      try {
+        setAdminDetail(JSON.parse(storedAdminDetail));
+      } catch (error) {
+        console.error('Error parsing adminDetail:', error);
+      }
+    }
+
     const loadTransactions = () => {
       try {
         const savedTransactions = JSON.parse(localStorage.getItem('pos_transactions') || '[]');
@@ -50,62 +53,125 @@ export default function DailyHistoryPage() {
   }, []);
 
 
-  const filteredTransactions = transactions.filter(transaction => {
-    const transactionDate = new Date(transaction.timestamp).toISOString().split('T')[0];
-    const matchesDate = !dateFilter || transactionDate === dateFilter;
+  // Get transactions from today (last 24 hours)
+  const getTodaysTransactions = () => {
+    const now = new Date();
+    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    
+    return transactions.filter(transaction => {
+      const txTime = new Date(transaction.timestamp);
+      return txTime >= twentyFourHoursAgo && txTime <= now;
+    });
+  };
+
+  const todaysTransactions = getTodaysTransactions();
+
+  const filteredTransactions = todaysTransactions.filter(transaction => {
     const matchesSearch = !searchQuery || 
       transaction.customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       transaction.id.toLowerCase().includes(searchQuery.toLowerCase());
     
-    return matchesDate && matchesSearch;
+    return matchesSearch;
   });
 
 
 
 
-  const todaysTransactions = transactions.filter(t => 
-    new Date(t.timestamp).toDateString() === new Date().toDateString()
-  );
-  
   const totalSales = todaysTransactions.reduce((sum, t) => sum + t.total, 0);
   const totalTax = todaysTransactions.reduce((sum, t) => sum + t.tax, 0);
- const totalItems = todaysTransactions.reduce(
-  (sum, t) =>
-    sum +
-    t.items.reduce(
-      (itemSum, item) => itemSum + item.quantity,
-      0
-    ),
-  0
-);
+  const totalItems = todaysTransactions.reduce(
+    (sum, t) =>
+      sum +
+      t.items.reduce(
+        (itemSum, item) => itemSum + item.quantity,
+        0
+      ),
+    0
+  );
 
   const totalDiscounts = todaysTransactions.reduce((sum, t) => 
     sum + (t.totalDiscount || 0), 0
   );
-  const unsyncedCount = todaysTransactions.filter(t => !t.synced).length;
+  const unsyncedCount = todaysTransactions.filter(t => !t.synced || t.status === 'failed').length;
+  const failedCount = todaysTransactions.filter(t => t.status === 'failed').length;
 
-  const handleSyncTransaction = (transactionId: string) => {
-   
-    const updatedTransactions = transactions.map(t => 
-      t.id === transactionId ? { ...t, synced: true } : t
-    );
-    
-    setTransactions(updatedTransactions);
-    localStorage.setItem('pos_transactions', JSON.stringify(updatedTransactions));
-  };
+  const handleSyncTransaction = async (transactionId: string) => {
+    const transaction = transactions.find(t => t.id === transactionId);
+    if (!transaction) return;
 
-  const handleDeleteTransaction = (transactionId: string) => {
-    if (confirm('Are you sure you want to delete this transaction?')) {
-      const updatedTransactions = transactions.filter(t => t.id !== transactionId);
+    try {
+      const token = localStorage.getItem('adminToken');
+      if (!token) throw new Error('No auth token');
+
+      const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://primelabs.maskiadmin-management.com/api';
+      
+      const salePayload = {
+        customer_id: !transaction.customer.is_walk_in ? transaction.customer.id : undefined,
+        customer: transaction.customer.is_walk_in 
+          ? {
+              name: transaction.customer.name || 'Walk-in',
+              email: transaction.customer.email || undefined,
+              phone: transaction.customer.phone || undefined,
+            }
+          : undefined,
+        items: transaction.items.map((item) => ({
+          variant_id: item.variantId,
+          quantity: item.quantity,
+          unit_price: item.price,
+        })),
+        payments: [{
+          method: transaction.paymentMethod,
+          amount: transaction.amountPaid,
+          reference: transaction.id,
+        }],
+        discount: transaction.totalDiscount || 0,
+        taxes: transaction.tax,
+        note: `Retry sync - ${transaction.id}`,
+      };
+
+      const response = await fetch(`${apiUrl}/sales`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(salePayload),
+      });
+
+      if (!response.ok) throw new Error('Sync failed');
+      
+      const updatedTransactions = transactions.map(t => 
+        t.id === transactionId ? { ...t, synced: true, status: 'completed' as const } : t
+      );
       setTransactions(updatedTransactions);
       localStorage.setItem('pos_transactions', JSON.stringify(updatedTransactions));
+      
+      toast.success('Transaction synced successfully');
+    } catch (error) {
+      console.error('Sync failed:', error);
+      toast.error('Failed to sync transaction');
     }
   };
 
-  const handleSyncAll = () => {
-    const updatedTransactions = transactions.map(t => ({ ...t, synced: true }));
-    setTransactions(updatedTransactions);
-    localStorage.setItem('pos_transactions', JSON.stringify(updatedTransactions));
+  const handleCancelTransaction = (transactionId: string) => {
+    if (confirm('Are you sure you want to cancel this transaction? This cannot be undone.')) {
+      const updatedTransactions = transactions.filter(t => t.id !== transactionId);
+      setTransactions(updatedTransactions);
+      localStorage.setItem('pos_transactions', JSON.stringify(updatedTransactions));
+      toast.success('Transaction cancelled');
+    }
+  };
+
+  const handleSyncAll = async () => {
+    const unsyncedTransactions = todaysTransactions.filter(t => !t.synced || t.status === 'failed');
+    if (unsyncedTransactions.length === 0) {
+      toast.info('No transactions to sync');
+      return;
+    }
+
+    for (const tx of unsyncedTransactions) {
+      await handleSyncTransaction(tx.id);
+    }
   };
 
   const handleExport = () => {
@@ -177,11 +243,6 @@ const totalCreditValue = creditTransactions.reduce(
 
 const totalCreditBalance = creditTransactions.reduce(
   (sum, t) => sum + (t.credit?.creditBalance || 0),
-  0
-);
-
-const totalCreditPaid = creditTransactions.reduce(
-  (sum, t) => sum + (t.credit?.amountPaidTowardCredit || 0),
   0
 );
 
@@ -338,11 +399,11 @@ const handlePrintReceipt = (transaction: Transaction) => {
               <div className="relative">
         <Link href="/dashboard" className="flex items-center gap-3">
           <div className="h-8 w-8 bg-green-400 rounded-lg flex items-center justify-center">
-            <span className="text-black font-bold text-sm">BMT</span>
+            <span className="text-black font-bold text-sm">PL</span>
           </div>
           <div>
-            <div className="font-bold text-gray-900 text-lg">Big Men</div>
-            <div className="text-xs text-gray-800 -mt-1">Transaction Apparel</div>
+            <div className="font-bold text-gray-900 text-lg">Prime</div>
+            <div className="text-xs text-gray-800 -mt-1">Labs</div>
           </div>
         </Link>
       </div>
@@ -357,7 +418,7 @@ const handlePrintReceipt = (transaction: Transaction) => {
             </Button>
             <Button variant="outline" onClick={handleSyncAll}>
               <RefreshCw className="h-4 w-4 mr-2" />
-              Sync All
+              Sync All Pending
             </Button>
             <Button className="bg-black hover:bg-gray-800 text-white">
               <Filter className="h-4 w-4 mr-2" />
@@ -365,6 +426,21 @@ const handlePrintReceipt = (transaction: Transaction) => {
             </Button>
           </div>
         </div>
+
+        {/* Cashier/Admin Section */}
+        {adminDetail && (
+          <Card className="bg-blue-50 border border-blue-200">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <User className="h-5 w-5 text-blue-600" />
+                <div>
+                  <div className="text-sm text-gray-600">Logged In As</div>
+                  <div className="font-semibold text-gray-900">{adminDetail.full_name || adminDetail.username || 'Unknown'}</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
        
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
@@ -428,11 +504,25 @@ const handlePrintReceipt = (transaction: Transaction) => {
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-sm text-gray-500">Unsynced</div>
+                  <div className="text-sm text-gray-500">Pending/Failed</div>
                   <div className="text-xl font-bold">{unsyncedCount}</div>
                 </div>
-                <div className="bg-red-500 p-2 rounded-lg">
+                <div className="bg-orange-500 p-2 rounded-lg">
                   <RefreshCw className="h-5 w-5 text-white" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className='text-gray-900 bg-white rounded-sm border border-gray-100 shadow-2xl'>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm text-gray-500">Failed Sales</div>
+                  <div className="text-xl font-bold">{failedCount}</div>
+                </div>
+                <div className="bg-red-500 p-2 rounded-lg">
+                  <DollarSign className="h-5 w-5 text-white" />
                 </div>
               </div>
             </CardContent>
@@ -533,23 +623,12 @@ const handlePrintReceipt = (transaction: Transaction) => {
         <Card className='text-gray-900 bg-white rounded-sm border border-gray-100 shadow-2xl'>
           <CardHeader>
             <CardTitle>Filters</CardTitle>
-            <CardDescription>Filter transactions by date or search</CardDescription>
+            <CardDescription>Filter transactions from the last 24 hours</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className='flex flex-col gap-2'>
-                <Label htmlFor="date">Date</Label>
-                <Input
-                  id="date"
-                  type="date"
-                  value={dateFilter}
-                  onChange={(e) => setDateFilter(e.target.value)}
-                  className='border border-gray-900'
-                />
-              </div>
-              
-              <div className='flex flex-col gap-2'>
-                <Label htmlFor="search">Search</Label>
+                <Label htmlFor="search">Search by Customer or ID</Label>
                 <Input
                   id="search"
                   placeholder="Search by customer or transaction ID"
@@ -564,7 +643,6 @@ const handlePrintReceipt = (transaction: Transaction) => {
                   variant="secondary" 
                   className="w-full"
                   onClick={() => {
-                    setDateFilter('');
                     setSearchQuery('');
                   }}
                 >
@@ -643,12 +721,15 @@ const handlePrintReceipt = (transaction: Transaction) => {
                           NGN {transaction.total.toFixed(2)}
                         </TableCell>
                         <TableCell>
-                          <Badge 
-                            variant={transaction.synced ? "default" : "destructive"}
-                            className={transaction.synced ? 'bg-green-100 text-green-800 hover:bg-green-100' : ''}
-                          >
-                            {transaction.synced ? 'Synced' : 'Unsynced'}
-                          </Badge>
+                          {transaction.status === 'failed' ? (
+                            <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Failed</Badge>
+                          ) : transaction.status === 'completed' ? (
+                            <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Completed</Badge>
+                          ) : transaction.synced ? (
+                            <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Synced</Badge>
+                          ) : (
+                            <Badge className="bg-orange-100 text-orange-800 hover:bg-orange-100">Pending</Badge>
+                          )}
                         </TableCell>
                                             <TableCell>
                         {transaction.paymentMethod === 'installment' && transaction.installmentPlan && (
@@ -666,16 +747,15 @@ const handlePrintReceipt = (transaction: Transaction) => {
 
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
-                            {!transaction.synced && (
-                              
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleSyncTransaction(transaction.id)}
-                              >
-                                <RefreshCw className="h-3 w-3 mr-1" />
-                                Sync
-                              </Button>
+                            {(!transaction.synced || transaction.status === 'failed') && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleSyncTransaction(transaction.id)}
+                            >
+                              <RefreshCw className="h-3 w-3 mr-1" />
+                              Sync
+                            </Button>
                             )}
                               <Button
                               size="sm"
@@ -688,9 +768,9 @@ const handlePrintReceipt = (transaction: Transaction) => {
                             <Button
                               size="sm"
                               variant="destructive"
-                              onClick={() => handleDeleteTransaction(transaction.id)}
+                              onClick={() => handleCancelTransaction(transaction.id)}
                             >
-                              Delete
+                              Cancel
                             </Button>
                           </div>
                         </TableCell>
@@ -732,6 +812,18 @@ const handlePrintReceipt = (transaction: Transaction) => {
             )}
           </CardContent>
         </Card>
+        <div className="mt-6 text-center text-sm text-gray-500">
+    <span>
+      © {new Date().getFullYear()} PrimeLabs Business Solution. All rights reserved.
+    </span>
+
+    <span className="flex items-center gap-1">
+      Powered by
+      <span className="font-medium text-gray-700">
+        PrimeLabs Business Solution
+      </span>
+    </span>
+       </div>
       </div>
   );
 }

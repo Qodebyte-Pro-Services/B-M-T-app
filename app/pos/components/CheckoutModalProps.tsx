@@ -26,7 +26,7 @@ import {
   Calendar,
   Wallet
 } from "lucide-react";
-import { CartItem, Customer, InstallmentPayment, InstallmentPlan } from '@/app/utils/type';
+import { CartItem, Customer, InstallmentPayment, InstallmentPlan, Transaction } from '@/app/utils/type';
 import { Receipt } from './Receipt';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -34,6 +34,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import ReactDOMServer from 'react-dom/server';
+import { useSales, type CreateSalePayload, type SaleResponse } from './useSales';
+import { OfflineTransactionManager } from './OfflineTransactionManager';
+import { Loader2, AlertCircle } from 'lucide-react';
 
 interface CheckoutModalProps {
   open: boolean;
@@ -47,7 +50,8 @@ interface CheckoutModalProps {
   onComplete: () => void;
   purchaseType: 'in-store' | 'online';
     totalDiscount?: number;  
-  itemDiscountToggles?: Record<string, boolean>; 
+  itemDiscountToggles?: Record<string, boolean>;
+  onWalkInCreated?: () => Promise<void>;
 }
 
 export function CheckoutModal({
@@ -63,6 +67,7 @@ export function CheckoutModal({
   purchaseType,
   totalDiscount = 0,  
   itemDiscountToggles = {},
+  onWalkInCreated,
 }: CheckoutModalProps) {
 
   const [customTax, setCustomTax] = useState<number>(tax);
@@ -71,7 +76,7 @@ export function CheckoutModal({
     setCustomTax(tax);
   }, [tax, open]);
 
-  const netTotal = (subtotal + customTax) - (totalDiscount || 0);
+const netTotal = subtotal + customTax - totalDiscount;
 
   const [paymentMethod, setPaymentMethod] = useState<string>('cash');
   const [amountPaid, setAmountPaid] = useState<string>(netTotal.toFixed(2));
@@ -92,7 +97,11 @@ const [transactionId, setTransactionId] = useState<string | null>(null);
 
 const [creditType, setCreditType] = useState<'full' | 'partial'>('full');
 
-
+  // Backend sync states
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'offline' | 'error'>('idle');
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const { createSale, loading: createSaleLoading } = useSales();
 
   const [useInstallments, setUseInstallments] = useState<boolean>(false);
 const [installmentPlan, setInstallmentPlan] = useState<InstallmentPlan>({
@@ -121,9 +130,10 @@ useEffect(() => {
 }, [customer, netTotal]);
 
   
-  const isCustomerEligibleForInstallments = customer.id !== 'walk-in';
+  const isWalkInCustomer = customer.is_walk_in === true || customer.id === 'walk-in' || customer.id === 'walk-in-temp';
+  const isCustomerEligibleForInstallments = !isWalkInCustomer;
 
-  const isCustomerVerified = customer.id !== 'walk-in';
+  const isCustomerVerified = !isWalkInCustomer;
 
 
 
@@ -178,7 +188,7 @@ const calculateInstallments = () => {
     calculateInstallments();
   }, [useInstallments, installmentPlan.numberOfPayments, installmentPlan.downPayment, amountPaid, netTotal]);
 
-const handleCompleteSale = () => {
+const handleCompleteSale = async () => {
   
   // eslint-disable-next-line react-hooks/purity
   const transactionId = `txn_${Date.now()}`;
@@ -335,10 +345,9 @@ const handleCompleteSale = () => {
       : 0,
     },
   }),
-};
+} as Transaction;
 
-
-
+  // Save to local storage (offline backup)
   const transactions = JSON.parse(
     localStorage.getItem('pos_transactions') || '[]'
   );
@@ -373,7 +382,161 @@ const handleCompleteSale = () => {
     );
   }
 
-  setShowReceipt(true);
+  // Attempt to sync with backend
+  setIsSyncing(true);
+  setSyncStatus('syncing');
+  setSyncError(null);
+
+  try {
+    // Check if online
+    if (!navigator.onLine) {
+      setSyncStatus('offline');
+      OfflineTransactionManager.addTransaction(transaction as Transaction);
+      toast.info('🔴 Offline Mode', {
+        description: 'Transaction saved offline. Will sync when online.',
+      });
+      setShowReceipt(true);
+      return;
+    }
+
+    // Prepare payload for backend
+    // Build payments array - for split payments, include all methods; for others, single payment
+    const paymentsArray = paymentMethod === 'split' && splitPayments.length > 0
+      ? splitPayments
+          .filter(p => parseFloat(p.amount) > 0) // Only include payments with amounts
+          .map(p => ({
+            method: p.method as 'cash' | 'card' | 'transfer' | 'split' | 'installment' | 'credit',
+            amount: Math.round(parseFloat(p.amount) * 100) / 100, // Round to 2 decimals
+            reference: transactionId || undefined,
+          }))
+      : [
+          {
+            method: (useInstallments
+              ? 'installment'
+              : paymentMethod) as 'cash' | 'card' | 'transfer' | 'split' | 'installment' | 'credit',
+            amount: useInstallments 
+              ? Math.round(getActualDownPayment() * 100) / 100
+              : paymentMethod === 'credit' 
+                ? (creditType === 'partial' ? Math.round((parseFloat(amountPaid) || 0) * 100) / 100 : 0) 
+                : Math.round((parseFloat(amountPaid) || 0) * 100) / 100,
+            reference: transactionId || undefined,
+          },
+        ];
+
+    // Determine if we should send customer_id or customer object
+    // For walk-in customers: use customer_id if it has a real UUID, otherwise send as customer object
+    const hasRealCustomerId = customer.id && customer.id !== 'walk-in' && customer.id !== 'walk-in-temp';
+    const shouldUseCustomerId = !isWalkInCustomer || (isWalkInCustomer && hasRealCustomerId);
+
+    const salePayload: CreateSalePayload = {
+      customer_id: shouldUseCustomerId ? customer.id : undefined,
+      customer:
+        !shouldUseCustomerId && isWalkInCustomer
+          ? {
+              name: customer.name || 'Walk-in',
+              email: customer.email || undefined,
+              phone: customer.phone || undefined,
+            }
+          : undefined,
+      items: cart.map((item) => ({
+        variant_id: item.variantId,
+        quantity: item.quantity,
+        unit_price: item.price,
+      })),
+      payments: paymentsArray,
+      ...(paymentMethod === 'credit' && {
+        credit: {
+          issuedAt: timestamp,
+          creditType: creditType,
+          creditBalance:
+            creditType === 'full'
+              ? Math.round(netTotal * 100) / 100
+              : Math.round((netTotal - (parseFloat(amountPaid) || 0)) * 100) / 100,
+          amountPaidTowardCredit:
+            creditType === 'partial' ? Math.round((parseFloat(amountPaid) || 0) * 100) / 100 : 0,
+        },
+      }),
+      ...(useInstallments && {
+        installment: {
+          downPayment: Math.round(getActualDownPayment() * 100) / 100,
+          numberOfPayments: installmentPlan.numberOfPayments,
+          paymentFrequency: installmentPlan.paymentFrequency,
+          startDate: installmentPlan.startDate,
+          notes: installmentPlan.notes || '',
+        },
+      }),
+      discount: Math.round((totalDiscount || 0) * 100) / 100,
+      taxes: Math.round(customTax * 100) / 100,
+      note: `Transaction ${transactionId} - ${purchaseType}`,
+    };
+
+    // Call backend API
+    const result: SaleResponse = await createSale(salePayload);
+
+    setSyncStatus('success');
+    
+    // Update transaction in localStorage to mark as synced and completed
+    const allTransactions = JSON.parse(
+      localStorage.getItem('pos_transactions') || '[]'
+    );
+    const txIndex = allTransactions.findIndex((t: Transaction) => t.id === transactionId);
+    if (txIndex >= 0) {
+      allTransactions[txIndex] = {
+        ...allTransactions[txIndex],
+        synced: true,
+        status: 'completed' as const,
+      };
+      localStorage.setItem('pos_transactions', JSON.stringify(allTransactions));
+    }
+
+    toast.success('✅ Transaction Synced', {
+      description: `Order created successfully (ID: ${result.id})`,
+    });
+
+    
+    if (isWalkInCustomer && onWalkInCreated) {
+      try {
+        await onWalkInCreated();
+      } catch (err) {
+        console.warn('Failed to refetch walk-in customer:', err);
+      }
+    }
+
+    setShowReceipt(true);
+  } catch (error) {
+    console.error('Checkout error:', error);
+
+    const failedTransaction: Transaction = {
+      ...transaction,
+      status: 'failed',
+      synced: false,
+    };
+
+   
+    const transactions = JSON.parse(
+      localStorage.getItem('pos_transactions') || '[]'
+    );
+ 
+    const txIndex = transactions.findIndex((t: Transaction) => t.id === transaction.id);
+    if (txIndex >= 0) {
+      transactions[txIndex] = failedTransaction;
+    } else {
+      transactions.push(failedTransaction);
+    }
+    localStorage.setItem('pos_transactions', JSON.stringify(transactions));
+
+    OfflineTransactionManager.addTransaction(failedTransaction);
+    
+    toast.error('❌ Transaction Failed', {
+      description:
+        'Transaction could not be completed. Stored for later retry in transaction history.',
+    });
+
+    setSyncError(error instanceof Error ? error.message : 'Unknown error occurred');
+    setShowReceipt(true);
+  } finally {
+    setIsSyncing(false);
+  }
 };
 
 useEffect(() => {
@@ -655,11 +818,52 @@ useEffect(() => {
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-gray-900 text-white">
               <DialogHeader>
-            <DialogTitle>Complete Sale</DialogTitle>
+            <DialogTitle className="flex items-center justify-between">
+              <span>Complete Sale</span>
+              {isSyncing && (
+                <div className="flex items-center gap-2 text-sm">
+                  <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+                  <span>Syncing...</span>
+                </div>
+              )}
+              {syncStatus === 'offline' && (
+                <Badge className="bg-orange-600">🔴 Offline Mode</Badge>
+              )}
+              {syncStatus === 'success' && (
+                <Badge className="bg-green-600">✅ Synced</Badge>
+              )}
+              {syncStatus === 'error' && (
+                <Badge className="bg-red-600">❌ Failed to Sync</Badge>
+              )}
+            </DialogTitle>
             <DialogDescription>
               Review order and select payment method
             </DialogDescription>
             </DialogHeader>
+
+            {syncStatus === 'offline' && !isSyncing && (
+              <div className="p-3 bg-orange-900/30 border border-orange-700 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="h-5 w-5 text-orange-400 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm">
+                    <p className="font-semibold text-orange-300">Transaction Saved Offline</p>
+                    <p className="text-orange-200 mt-1">Your transaction has been saved locally and will be synced to the server when your connection is restored.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {syncError && (
+              <div className="p-3 bg-red-900/30 border border-red-700 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="h-5 w-5 text-red-400 mt-0.5 flex-shrink-0" />
+                  <div className="text-sm">
+                    <p className="font-semibold text-red-300">Sync Error</p>
+                    <p className="text-red-200 mt-1">{syncError}</p>
+                  </div>
+                </div>
+              </div>
+            )}
             
           <Receipt
             customer={customer}
@@ -677,19 +881,19 @@ useEffect(() => {
           />
           
           <div className="flex flex-wrap gap-3 mt-6">
-            <Button onClick={handlePrintReceipt} className="flex-1">
+            <Button onClick={handlePrintReceipt} className="flex-1" disabled={isSyncing}>
               <Printer className="h-4 w-4 mr-2" />
               Print
             </Button>
-            <Button variant="outline" onClick={handleDownloadPDF} className="flex-1">
+            <Button variant="outline" onClick={handleDownloadPDF} className="flex-1" disabled={isSyncing}>
               <Download className="h-4 w-4 mr-2" />
               PDF
             </Button>
-            <Button variant="outline" onClick={handleDownloadImage} className="flex-1">
+            <Button variant="outline" onClick={handleDownloadImage} className="flex-1" disabled={isSyncing}>
               <Download className="h-4 w-4 mr-2" />
               Image
             </Button>
-            <Button variant="outline" onClick={handleShareReceipt} className="flex-1">
+            <Button variant="outline" onClick={handleShareReceipt} className="flex-1" disabled={isSyncing}>
               <Share2 className="h-4 w-4 mr-2" />
               Share
             </Button>
@@ -1268,12 +1472,16 @@ function SplitPaymentModal({
                 0
               );
 
-              if (toCents(totalPaid) !== toCents(netTotal)) {
-                toast.error('Split amounts must equal total');
+              // Round to 2 decimal places to avoid floating point issues
+              const roundedTotalPaid = Math.round(totalPaid * 100) / 100;
+              const roundedNetTotal = Math.round(netTotal * 100) / 100;
+
+              if (Math.abs(roundedTotalPaid - roundedNetTotal) > 0.01) {
+                toast.error(`Split amounts must equal total (${roundedNetTotal.toFixed(2)})`);
                 return;
               }
 
-              setAmountPaid(netTotal.toFixed(2));
+              setAmountPaid(roundedNetTotal.toFixed(2));
               setPaymentMethod('split');
               onOpenChange(false);
             }}

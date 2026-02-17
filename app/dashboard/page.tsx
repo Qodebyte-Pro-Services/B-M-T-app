@@ -23,186 +23,391 @@ import { IncomeExpenseChart } from './components/IncomeExpenseChart';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { StockMovementTable } from '../inventory/components/StockMovement';
 import { TransactionsTab } from '../sales/components/TransactionsTab';
-import { Expense, ExpenseCategory, loginAttempts, Transaction } from '../utils/type';
+import { Expense, ExpenseCategory } from '../utils/type';
 import { ExpensesTable } from '../expenses/component/ExpensesTable';
 import { toast } from 'sonner';
 import { CreditInstallmentOverview } from './components/SalesCategoryChart';
-import { format } from 'date-fns';
+import { usePageGuard } from '../hooks/usePageGuard';
+
+type KPIData = {
+  title: string;
+  value: string;
+  change?: string;
+  icon: React.ReactNode;
+  description: string;
+};
+
+type LoginAttemptType = {
+  login_attempt_id: string;
+  admin_id: string;
+  adminName: string;
+  email: string;
+  device: string;
+  ip_address: string;
+  status: 'pending' | 'approved' | 'rejected' | 'completed';
+  approved_by_id: string | null;
+  approvedByName: string | null;
+  approved_at: string | null;
+  rejected_reason: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+
 export default function DashboardPage() {
-  const [activeTab, setActiveTab] = useState("overview");
-  const [dateRange, setDateRange] = useState("thisMonth");
-    const [paymentMethodFilter, setPaymentMethodFilter] = useState('all');
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [categories, setCategories] = useState<ExpenseCategory[]>([
-    { id: 'cat-1', name: 'Office Supplies' },
-    { id: 'cat-2', name: 'Utilities' },
-    { id: 'cat-3', name: 'Marketing' },
-    { id: 'cat-4', name: 'Travel' },
-    { id: 'cat-5', name: 'Software' },
-    { id: 'cat-6', name: 'Equipment' },
+     usePageGuard([
+    "view_inventory",
+    "view_expenses",
+    "view_customer",
+    "view_staff",
+    "view_settings",
+    "view_login_attempts"
   ]);
-  const ITEMS_PER_PAGE = 5;
-
-const [currentPage, setCurrentPage] = useState(1);
-
-const totalPages = Math.ceil(loginAttempts.length / ITEMS_PER_PAGE);
-
-const paginatedLogins = loginAttempts.slice(
-  (currentPage - 1) * ITEMS_PER_PAGE,
-  currentPage * ITEMS_PER_PAGE
-);
-
-    useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('pos_transactions') || '[]');
-      setTransactions(saved);
-    } catch {
-      setTransactions([]);
-    }
+  const [activeTab, setActiveTab] = useState("overview");
+  const [dateRange, setDateRange] = useState({
+    filter: 'today',
+    startDate: new Date().toISOString().split('T')[0],
+    endDate: new Date().toISOString().split('T')[0],
   });
+  const [filterDate, setFilterDate] = useState("yesterday")
+    const [paymentMethodFilter, setPaymentMethodFilter] = useState('all');
+    const [transactionIdFilter, setTransactionIdFilter] = useState('');
+    const [dateRangeTransactionFilter, setDateRangeTransactionFilter] = useState({
+    filter: 'today',
+    startDate: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
+    endDate: new Date().toISOString().split('T')[0],
+    });
+      const [totalCount, setTotalCount] = useState(0);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+     const [loading, setLoading] = useState(false);
+       const [totalPages, setTotalPages] = useState(1);
+    const [expenseToDelete, setExpenseToDelete] = useState<Expense | null>(null);
+  const [categories, setCategories] = useState<ExpenseCategory[]>([]);
+   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+ const [error, setError] = useState<string | null>(null);
+const [currentPage, setCurrentPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
+
+const [logins, setLogins] = useState<LoginAttemptType[]>([]);
+
+const [loginTotalPages, setLoginTotalPages] = useState(1);
+const [loginCurrentPage, setLoginCurrentPage] = useState(1);
+const ITEMS_PER_PAGE = 8;
+const [loadingLogins, setLoadingLogins] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+      const [kpiData, setKpiData] = useState<KPIData[]>([]);
+  const [kpiLoading, setKpiLoading] = useState(true);
+
+
+
+
+
+ const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://primelabs.maskiadmin-management.com/api';
+ const limit = 8;
+
+   const getAuthToken = () => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('adminToken');
+    }
+    return null;
+  };
+
+  const fetchLogins = async (page = 1) => {
+  setLoadingLogins(true);
+  try {
+    const token = getAuthToken();
+    if (!token) throw new Error("Authentication required");
+
+    const response = await fetch(`${apiUrl}/auth/login-attempts?page=${page}&limit=${ITEMS_PER_PAGE}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to fetch login attempts");
+    }
+
+    const data = await response.json();
+    setLogins(data.data || []);
+    setLoginTotalPages(data.pagination.totalPages);
+    setLoginCurrentPage(data.pagination.page);
+  } catch (err) {
+    console.error(err);
+    toast.error("Failed to load login attempts");
+  } finally {
+    setLoadingLogins(false);
+  }
+};
+
+
+useEffect(() => {
+  fetchLogins(loginCurrentPage);
+}, [loginCurrentPage]);
+
+const handleApproveLogin = async (id: string) => {
+  try {
+    setIsSubmitting(true);
+    const token = getAuthToken();
+    const res = await fetch(`${apiUrl}/auth/login-attempts/${id}/approve`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!res.ok) throw new Error("Failed to approve login");
+
+    toast.success("Login approved!");
+    fetchLogins(loginCurrentPage);
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : "Error approving login");
+  } finally {
+    setIsSubmitting(false);
+  }
+};
+
+const handleRejectLogin = async (id: string) => {
+  try {
+    setIsSubmitting(true);
+    const token = getAuthToken();
+    const res = await fetch(`${apiUrl}/auth/login-attempts/${id}/reject`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: "Rejected via dashboard" }),
+    });
+
+    if (!res.ok) throw new Error("Failed to reject login");
+
+    toast.success("Login rejected!");
+    fetchLogins(loginCurrentPage);
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : "Error rejecting login");
+  } finally {
+    setIsSubmitting(false);
+  }
+};
+
+
+  const fetchKPIData = async (filterType: string) => {
+    try {
+      setKpiLoading(true);
+      const token = getAuthToken();
+      if (!token) {
+        console.error('No authentication token found');
+        toast.error('Authentication required');
+        return;
+      }
+
+      let url = `${apiUrl}/analytics/dashboard-kpi?filter=${filterType}`;
+
+      // Add custom date range if needed
+      if (filterType === 'custom' && dateRangeTransactionFilter.startDate && dateRangeTransactionFilter.endDate) {
+        url += `&start_date=${dateRangeTransactionFilter.startDate}&end_date=${dateRangeTransactionFilter.endDate}`;
+      }
+
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch KPI data: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      if (data.success && data.kpi) {
+        const kpi = data.kpi;
+
+        // Format currency values
+        const formatCurrency = (value: number) => {
+          return `NGN ${value.toLocaleString('en-NG', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0,
+          })}`;
+        };
+
+        // Build KPI cards with dynamic data
+        const dynamicKpiData: KPIData[] = [
+          {
+            title: "Total Sales",
+            value: formatCurrency(kpi.total_sales),
+            change: "+8.2%", // You might calculate this from backend if you have historical data
+            icon: <DollarSign className="h-5 w-5" />,
+            description: "earned"
+          },
+          {
+            title: "Total Transactions",
+            value: kpi.total_transactions.toString(),
+            change: "+8.2%",
+            icon: <CreditCard className="h-5 w-5" />,
+            description: "orders completed"
+          },
+          {
+            title: "Total Expenses",
+            value: formatCurrency(kpi.total_expense),
+            change: "+3.1%",
+            icon: <TrendingDown className="h-5 w-5" />,
+            description: "operational costs"
+          },
+          {
+            title: "Net Profit",
+            value: formatCurrency(kpi.net_profit),
+            change: kpi.net_profit >= 0 ? "+18.7%" : "-18.7%",
+            icon: <TrendingUp className="h-5 w-5" />,
+            description: "after all deductions"
+          }
+        ];
+
+        setKpiData(dynamicKpiData);
+      }
+    } catch (err) {
+      console.error('Error fetching KPI data:', err);
+      toast.error('Failed to load KPI data');
+    } finally {
+      setKpiLoading(false);
+    }
+  };
+
+  const fetchExpenses = async (page = 1) => {
+    setLoading(true);
+    setError(null);
+    setFilterDate("dateRange")
+
+    try {
+      const token = localStorage.getItem('adminToken');
+      if (!token) throw new Error('No authentication token found');
+
+      let url = `${apiUrl}/expenses?page=${page}&limit=${limit}`;
+      
+      if (statusFilter !== 'all') {
+        url += `&filter=${statusFilter}`;
+      }
+      
+      if (filterDate !== 'all') {
+        url += `&filter=${filterDate}`;
+      }
+
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch expenses');
+
+      const data = await response.json();
+      setExpenses(data.expenses);
+      setTotalPages(data.pagination.pages);
+      setTotalCount(data.pagination.total);
+      setCurrentPage(page);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setError(message);
+      console.error('Error fetching expenses:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
 
     useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem('pos_transactions') || '[]');
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setTransactions(saved);
-    } catch {
-      setTransactions([]);
-    }
-
-    try {
-       const savedExpenses = JSON.parse(localStorage.getItem('expenses') || '[]');
-    if (savedExpenses.length === 0) {
-     
-      const mockExpenses: Expense[] = [
-        {
-          id: 'exp-1',
-          name: 'Office Stationery',
-          categoryId: 'cat-1', 
-          amount: 15000,
-          note: 'Pens, paper, notebooks',
-          status: 'approved',
-          createdBy: 'Admin',
-          expenseDate: new Date().toISOString(),
-          createdAt: new Date().toISOString(),
-          month: format(new Date(), 'MMM yyyy'),
-        },
-        {
-          id: 'exp-2',
-          name: 'Internet Subscription',
-          categoryId: 'cat-2',
-          amount: 25000,
-          note: 'Monthly ISP bill',
-          status: 'approved',
-          createdBy: 'Admin',
-          expenseDate: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-          createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-          month: format(new Date(), 'MMM yyyy'),
-        },
-        {
-          id: 'exp-3',
-          name: 'Facebook Ads',
-          categoryId: 'cat-3',
-          amount: 40000,
-          note: 'Product campaign',
-          status: 'pending',
-          createdBy: 'Admin',
-          expenseDate: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-          createdAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-          month: format(new Date(), 'MMM yyyy'),
-        },
-      ];
-      localStorage.setItem('expenses', JSON.stringify(mockExpenses));
-      setExpenses(mockExpenses);
-    } else {
-      setExpenses(savedExpenses);
-    }
-  } catch {
-    setExpenses([]);
-  }
-}, []);
-
+      fetchExpenses(1);
+    }, [statusFilter, filterDate]);
 
 
   const handleViewInvoice = (expense: Expense) => {
     window.open(`/expenses/invoices/${expense.id}`, '_blank');
   };
 
-const handleDeleteExpense = (id: string) => {
-  if (confirm('Are you sure you want to delete this expense?')) {
-    const updated = expenses.filter(exp => exp.id !== id);
-    setExpenses(updated);
-    localStorage.setItem('expenses', JSON.stringify(updated));  // Add this
-  }
-};
+ const handleDeleteExpense = async () => {
+    if (!expenseToDelete) return;
 
-const handleApprove = (id: string) => {
-  const updated = expenses.map(exp =>
-    exp.id === id ? { ...exp, status: 'approved' as const } : exp
-  );
-  setExpenses(updated);
-  localStorage.setItem('expenses', JSON.stringify(updated));  // Add this
-};
+    setIsSubmitting(true);
+    setError(null);
 
-const handleReject = (id: string) => {
-  const updated = expenses.map(exp =>
-    exp.id === id ? { ...exp, status: 'rejected' as const } : exp
-  );
-  setExpenses(updated);
-  localStorage.setItem('expenses', JSON.stringify(updated));  // Add this
-};
+    try {
+      const token = localStorage.getItem('adminToken');
+      if (!token) throw new Error('No authentication token found');
+
+      const response = await fetch(`${apiUrl}/expenses/${expenseToDelete.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to delete expense');
+      }
+
+      await fetchExpenses(currentPage);
+      setIsDeleteDialogOpen(false);
+      setExpenseToDelete(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setError(message);
+      console.error('Error deleting expense:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+   const handleUpdateStatus = async (id: string, newStatus: 'approved' | 'rejected') => {
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      const token = localStorage.getItem('adminToken');
+      if (!token) throw new Error('No authentication token found');
+
+      const response = await fetch(`${apiUrl}/expenses/${id}/status`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: newStatus }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to update expense');
+      }
+
+      await fetchExpenses(currentPage);
+      setExpenses((prev) =>
+        prev.map((exp) =>
+          exp.id === id ? { ...exp, status: newStatus } : exp
+        )
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      setError(message);
+      console.error('Error updating expense:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleDateRangeChange = (range: string) => {
-    setDateRange(range);
+    setDateRange(prev => ({ ...prev, filter: range }));
     console.log("Date range changed to:", range);
   };
 
-  const handleApproveLogin = (id: string) => {
-  console.log('Approving login:', id);
-  
-  toast(`Login ${id} approved successfully!`);
-};
-
-const handleRejectLogin = (id: string) => {
-  console.log('Rejecting login:', id);
-
-  toast(`Login ${id} rejected!`);
-};
 
 
 
-  const kpiData = [
-    {
-      title: "Total Sales",
-      value: "NGN 142,580",
-   
-      icon: <DollarSign className="h-5 w-5" />,
-      description: "earned"
-    },
-    {
-      title: "Total Transactions",
-      value: "1,248",
-      change: "+8.2%",
-   
-      icon: <CreditCard className="h-5 w-5" />,
-      description: "orders completed"
-    },
-    {
-      title: "Total Expenses",
-      value: "NGN42,850",
-      change: "+3.1%",
-      icon: <TrendingDown className="h-5 w-5" />,
-      description: "operational costs"
-    },
-    {
-      title: "Net Profit",
-      value: "NGN99,730",
-      change: "+18.7%",
-      icon: <TrendingUp className="h-5 w-5" />,
-      description: "after all deductions"
-    }
-  ];
+
+   useEffect(() => {
+    fetchKPIData(dateRange.filter);
+  }, [dateRange]);
 
   useEffect(() => {
   // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -228,9 +433,27 @@ const handleRejectLogin = (id: string) => {
   lg:grid-cols-4 
   gap-4 md:gap-5 lg:gap-6 
   mb-8">
-        {kpiData.map((kpi, index) => (
-          <KpiCard key={index} {...kpi} />
-        ))}
+       {kpiLoading ? (
+         
+          Array(4).fill(0).map((_, index) => (
+            <div
+              key={`skeleton-${index}`}
+              className="bg-gray-100 border border-gray-200 rounded-lg p-4 animate-pulse"
+            >
+              <div className="h-4 bg-gray-300 rounded w-3/4 mb-2"></div>
+              <div className="h-8 bg-gray-300 rounded w-1/2 mb-2"></div>
+              <div className="h-4 bg-gray-300 rounded w-1/3"></div>
+            </div>
+          ))
+        ) : kpiData.length > 0 ? (
+          kpiData.map((kpi, index) => (
+            <KpiCard key={`kpi-${index}`} {...kpi} />
+          ))
+        ) : (
+          <div className="col-span-full text-center py-8">
+            <p className="text-gray-500">No KPI data available</p>
+          </div>
+        )}
       </div>
 
      
@@ -262,14 +485,20 @@ const handleRejectLogin = (id: string) => {
                   </div>
                 </div>
               </div>
-              <IncomeExpenseChart />
+            <IncomeExpenseChart 
+                dateRange={dateRange.filter}
+                onDataLoaded={(data) => {
+                  console.log('Chart data loaded:', data);
+                }}
+              />
             </div>
              </div>
 
           
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-            <StockAlertWidget />
-            <TopProductsWidget />
+            <StockAlertWidget  />
+          <TopProductsWidget  dateRange={dateRange.filter} />
+
           </div>
 
 
@@ -285,11 +514,11 @@ const handleRejectLogin = (id: string) => {
           </h3>
           <p className="text-sm sm:text-base text-gray-800">Credit-Installment</p>
         </div>
-        <div className="text-sm sm:text-base text-gray-900">Selected: {dateRange}</div>
+        <div className="text-sm sm:text-base text-gray-900">Selected: {dateRange.filter}</div>
       </div>
 
       
-      <CreditInstallmentOverview/>
+      <CreditInstallmentOverview />
            </div>
           </div>
         </TabsContent>
@@ -320,9 +549,10 @@ const handleRejectLogin = (id: string) => {
             </CardHeader>
             <CardContent className='p-3'>
               <TransactionsTab
-                transactions={transactions}
-                paymentMethodFilter={paymentMethodFilter}
-                onPaymentMethodFilterChange={setPaymentMethodFilter}
+               dateRange={dateRange} 
+      paymentMethodFilter={paymentMethodFilter}
+      onPaymentMethodFilterChange={setPaymentMethodFilter}
+      highlightedTransactionId={transactionIdFilter}
               />
             </CardContent>
           </Card>
@@ -338,13 +568,12 @@ const handleRejectLogin = (id: string) => {
             </CardHeader>
             <CardContent className='p-3'>
               <ExpensesTable
-                expenses={expenses}
-                categories={categories}
-                onDelete={handleDeleteExpense}
-                onViewInvoice={handleViewInvoice}
-                onApprove={handleApprove}
-                onReject={handleReject}
-              />
+          expenses={expenses}
+          categories={categories}
+          onDelete={handleDeleteExpense}
+          onViewInvoice={handleViewInvoice}
+          onUpdateStatus={handleUpdateStatus}
+        />
             </CardContent>
           </Card>
         </TabsContent>
@@ -369,9 +598,13 @@ const handleRejectLogin = (id: string) => {
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-800">
-      
-          {paginatedLogins.map((login) => (
-            <tr key={login.id} className="hover:bg-gray-800/50 transition-colors">
+          
+          { loadingLogins ? (
+  <tr><td colSpan={7} className="text-center p-4 text-gray-400">Loading...</td></tr>
+) : logins.length === 0 ? (
+  <tr><td colSpan={7} className="text-center p-4 text-gray-400">No login attempts found</td></tr>
+) : (logins.map((login) => (
+            <tr key={login.login_attempt_id} className="hover:bg-gray-800/50 transition-colors">
               <td className="p-4">
                 <div className="flex items-center gap-2">
                   <div className="h-8 w-8 rounded-full bg-gray-700 flex items-center justify-center">
@@ -379,7 +612,7 @@ const handleRejectLogin = (id: string) => {
                   </div>
                   <div>
                     <p className="font-medium text-white">{login.email}</p>
-                    <p className="text-xs text-gray-400">User ID: {login.id}</p>
+                    <p className="text-xs text-gray-400">User ID: {login.login_attempt_id}</p>
                   </div>
                 </div>
               </td>
@@ -399,39 +632,39 @@ const handleRejectLogin = (id: string) => {
               <td className="p-4">
                 <div className="flex items-center gap-2">
                   <span className="text-lg">📍</span>
-                  <span className="text-gray-300">{login.location}</span>
+                  <span className="text-gray-300">{login.ip_address}</span>
                 </div>
-                {login.location !== 'Unknown' && (
+                {login.ip_address !== 'Unknown' && (
                   <p className="text-xs text-gray-400 mt-1">Approximate location</p>
                 )}
               </td>
               <td className="p-4">
                 <div>
-                  <p className="text-white">{login.time.split(' ')[1]}</p>
-                  <p className="text-xs text-gray-400">{login.time.split(' ')[0]}</p>
+                  <p className="text-white">{login.createdAt.split(' ')[1]}</p>
+                  <p className="text-xs text-gray-400">{login.createdAt.split(' ')[0]}</p>
                 </div>
               </td>
               <td className="p-4">
                 <div className="flex items-center gap-2">
-                  {login.approvedBy === 'System' ? (
+                  {login.approvedByName === 'System' ? (
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-900 text-blue-300">
-                      🤖 {login.approvedBy}
+                      🤖 {login.approvedByName}
                     </span>
-                  ) : login.approvedBy === 'Admin' ? (
+                  ) : login.approvedByName === 'Admin' ? (
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-900 text-green-300">
-                      👑 {login.approvedBy}
+                      👑 {login.approvedByName}
                     </span>
-                  ) : login.approvedBy === 'Manager' ? (
+                  ) : login.approvedByName === 'Manager' ? (
                     <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-900 text-purple-300">
-                      👨‍💼 {login.approvedBy}
+                      👨‍💼 {login.approvedByName}
                     </span>
                   ) : (
-                    <span className="text-gray-400">{login.approvedBy}</span>
+                    <span className="text-gray-400">{login.approvedByName}</span>
                   )}
                 </div>
               </td>
               <td className="p-4">
-                {login.status === 'approved' ? (
+                {login.status === 'approved'  ? (
                   <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-900/30 text-green-300 border border-green-700/50">
                     <span className="h-1.5 w-1.5 rounded-full bg-green-400 mr-2"></span>
                     Approved
@@ -441,10 +674,15 @@ const handleRejectLogin = (id: string) => {
                     <span className="h-1.5 w-1.5 rounded-full bg-green-400 mr-2"></span>
                     Pending
                   </span>
-                ) : (
+                ) : login.status === 'rejected' ? (
                   <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-red-900/30 text-red-300 border border-red-700/50">
                     <span className="h-1.5 w-1.5 rounded-full bg-red-400 mr-2"></span>
                     Rejected
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-900/30 text-gray-300 border border-gray-700/50">
+                    <span className="h-1.5 w-1.5 rounded-full bg-gray-400 mr-2"></span>
+                    Completed
                   </span>
                 )}
               </td>
@@ -453,13 +691,13 @@ const handleRejectLogin = (id: string) => {
                   {login.status === 'pending' ? (
                     <>
                       <button
-                        onClick={() => handleApproveLogin(login.id)}
+                        onClick={() => handleApproveLogin(login.login_attempt_id)}
                         className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-lg bg-green-900/50 text-green-300 hover:bg-green-900 border border-green-700/50 hover:border-green-500 transition-colors"
                       >
                         ✓ Approve
                       </button>
                       <button
-                        onClick={() => handleRejectLogin(login.id)}
+                        onClick={() => handleRejectLogin(login.login_attempt_id)}
                         className="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-lg bg-red-900/50 text-red-300 hover:bg-red-900 border border-red-700/50 hover:border-red-500 transition-colors"
                       >
                         ✗ Reject
@@ -475,36 +713,32 @@ const handleRejectLogin = (id: string) => {
                 </div>
               </td>
             </tr>
-          ))}
+          )))}
         </tbody>
       </table>
 
       <div className="sm:flex sm:items-center sm:justify-between grid grid-cols-1 gap-2 mt-4 px-2">
   <p className="text-sm text-gray-400">
-    Page {currentPage} of {totalPages}
+    Page {loginCurrentPage} of {loginTotalPages} - Total Logins: {totalCount}
   </p>
 
   <div className="flex gap-2">
-    <button
-      disabled={currentPage === 1}
-      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-      className="px-3 py-1 text-sm rounded-md bg-gray-800 text-gray-300
-                 disabled:opacity-50 disabled:cursor-not-allowed
-                 hover:bg-gray-700 transition"
-    >
-      Previous
-    </button>
+  <button
+    disabled={loginCurrentPage === 1}
+    onClick={() => setLoginCurrentPage(p => Math.max(1, p - 1))}
+    className="px-3 py-1 text-sm rounded-md bg-gray-800 text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-700 transition"
+  >
+    Previous
+  </button>
 
-    <button
-      disabled={currentPage === totalPages}
-      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-      className="px-3 py-1 text-sm rounded-md bg-gray-800 text-gray-300
-                 disabled:opacity-50 disabled:cursor-not-allowed
-                 hover:bg-gray-700 transition"
-    >
-      Next
-    </button>
-  </div>
+  <button
+    disabled={loginCurrentPage === loginTotalPages}
+    onClick={() => setLoginCurrentPage(p => Math.min(loginTotalPages, p + 1))}
+    className="px-3 py-1 text-sm rounded-md bg-gray-800 text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-700 transition"
+  >
+    Next
+  </button>
+</div>
 </div>
     </div>
 
@@ -549,7 +783,7 @@ const handleRejectLogin = (id: string) => {
 
 
     <div className="mt-4 text-center">
-      <p className="text-sm text-gray-500">Based on selected date range: {dateRange}</p>
+      <p className="text-sm text-gray-500">Based on selected date range: {dateRange.filter}</p>
       <p className="text-xs text-gray-600 mt-1">Last updated: Just now</p>
     </div>
   </div>

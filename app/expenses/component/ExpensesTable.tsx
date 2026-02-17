@@ -15,15 +15,13 @@ export function ExpensesTable({
   categories, 
   onDelete, 
   onViewInvoice,
-  onApprove,
-  onReject
+  onUpdateStatus
 }: { 
   expenses: Expense[]; 
   categories: ExpenseCategory[]; 
   onDelete: (id: string) => void;
   onViewInvoice: (expense: Expense) => void;
-  onApprove: (id: string) => void;
-    onReject: (id: string) => void;
+  onUpdateStatus: (id: string, status: 'approved' | 'rejected') => Promise<void>;
 }) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -33,12 +31,11 @@ export function ExpensesTable({
   const itemsPerPage = 10;
 
   const filteredExpenses = expenses.filter(expense => {
-    const matchesSearch = expense.name.toLowerCase().includes(search.toLowerCase()) ||
-                         expense.note?.toLowerCase().includes(search.toLowerCase());
+    const matchesSearch = expense.note?.toLowerCase().includes(search.toLowerCase());
     const matchesStatus = statusFilter === 'all' || expense.status === statusFilter;
-    const matchesMonth = monthFilter === 'all' || expense.month === monthFilter;
+    const matchesMonth = monthFilter === 'all' || format(parseISO(expense.createdAt), 'MMM yyyy') === monthFilter;
     
-    return matchesSearch && matchesStatus && matchesMonth;
+    return matchesSearch && matchesStatus && matchesMonth
   });
 
   const paginatedExpenses = filteredExpenses.slice(
@@ -57,6 +54,10 @@ export function ExpensesTable({
       case 'rejected':
         return <Badge className="bg-red-100 text-red-800"><XCircle className="w-3 h-3 mr-1" /> Rejected</Badge>;
     }
+  };
+
+  const getCategoryName = (categoryId: string) => {
+    return categories.find((c) => c.expense_category_id === categoryId)?.name || 'Unknown';
   };
 
   return (
@@ -107,109 +108,83 @@ export function ExpensesTable({
         <div className="overflow-x-auto">
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>Expense Name</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Created By</TableHead>
-                <TableHead>Date</TableHead>
-                <TableHead>Receipt</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+              <TableRow className="border-gray-700">
+                <TableHead className="text-gray-100">Category</TableHead>
+                <TableHead className="text-gray-100">Amount</TableHead>
+                <TableHead className="text-gray-100">Payment Method</TableHead>
+                <TableHead className="text-gray-100">Status</TableHead>
+                <TableHead className="text-gray-100">Created By</TableHead>
+                <TableHead className="text-gray-100">Date</TableHead>
+                <TableHead className="text-gray-100 text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedExpenses.map(expense => {
-                const category = categories.find(c => c.id === expense.categoryId);
-                return (
-                  <TableRow key={expense.id}>
-                    <TableCell>
-                      <div>
-                        <p className="font-medium">{expense.name}</p>
-                        {expense.note && (
-                          <p className="text-sm text-gray-500 truncate max-w-xs">{expense.note}</p>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline">{category?.name || 'Uncategorized'}</Badge>
-                    </TableCell>
-                    <TableCell className="font-bold">
-                      NGN {expense.amount.toLocaleString()}
-                    </TableCell>
-                    <TableCell>{getStatusBadge(expense.status)}</TableCell>
-                    <TableCell>{expense.createdBy}</TableCell>
-                    <TableCell>
-                      <div className="text-sm">
-                        <p>{format(parseISO(expense.expenseDate), 'MMM dd, yyyy')}</p>
-                        <p className="text-gray-500">{expense.month}</p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      {expense.receiptUrl ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => window.open(expense.receiptUrl, '_blank')}
-                        >
-                          <Eye className="w-4 h-4" />
-                        </Button>
-                      ) : (
-                        <span className="text-gray-400">No receipt</span>
-                      )}
-                    </TableCell>
+              {paginatedExpenses.map((expense) => (
+                <TableRow
+                  key={expense.id}
+                  className="border-gray-700 hover:bg-gray-750"
+                >
+                  <TableCell className="text-gray-200">
+                    {getCategoryName(expense.expense_category_id)}
+                  </TableCell>
+                  <TableCell className="text-gray-200 font-semibold">
+                    ₦{Number(expense.expense_amount).toLocaleString()}
+                  </TableCell>
+                  <TableCell className="text-gray-200">
+                    {expense.payment_method.replace(/_/g, ' ')}
+                  </TableCell>
+                  <TableCell>{getStatusBadge(expense.status)}</TableCell>
+                  <TableCell className="text-gray-200 text-sm">
+                    {expense.admin?.full_name || expense.admin?.email || 'Unknown'}
+                  </TableCell>
+                  <TableCell className="text-gray-200 text-sm">
+                    {format(new Date(expense.date), 'MMM dd, yyyy')}
+                  </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-2 flex-wrap">
-                        
-                        {expense.status === 'pending' && (
-                        <>
-                            <Button
-                            size="sm"
-                            className="bg-green-600 hover:bg-green-700 text-white"
-                            onClick={() => onApprove(expense.id)}
-                            >
-                            <CheckCircle className="w-4 h-4 mr-1" />
-                            Approve
-                            </Button>
-
-                            <Button
-                            size="sm"
-                            variant="destructive"
-                            onClick={() => onReject(expense.id)}
-                            >
-                            <XCircle className="w-4 h-4 mr-1" />
-                            Reject
-                            </Button>
-                        </>
-                        )}
-
-                        <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => onViewInvoice(expense)}
-                        >
-                        <Receipt className="w-4 h-4 mr-1" />
-                        Invoice
-                        </Button>
-
-                        <Button
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        size="icon"
                         variant="ghost"
-                        size="sm"
-                        onClick={() => onDelete(expense.id)}
-                        >
-                        <Trash2 className="w-4 h-4" />
-                        </Button>
+                        onClick={() => onViewInvoice(expense)}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
 
+                      {expense.status === 'pending' && (
+                        <>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => onUpdateStatus(expense.id, 'approved')}
+                          >
+                            <CheckCircle className="h-4 w-4 text-green-500" />
+                          </Button>
+
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            onClick={() => onUpdateStatus(expense.id, 'rejected')}
+                          >
+                            <XCircle className="h-4 w-4 text-red-500" />
+                          </Button>
+                        </>
+                      )}
+
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => onDelete(expense.id)}
+                      >
+                        <Trash2 className="h-4 w-4 text-red-500" />
+                      </Button>
                     </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </div>
         
-      
         {totalPages > 1 && (
           <div className="mt-6 flex items-center justify-between">
             <p className="text-sm text-gray-600">

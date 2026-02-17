@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { AuthForm } from '@/app/components/AuthForm';
-import { mockResetPassword } from '@/app/mock/auth';
+import { toast } from 'sonner';
+import { resetPassword } from '@/app/mock/auth';
 
 const resetSchema = z.object({
   new_password: z.string().min(8, 'Password must be at least 8 characters'),
@@ -30,14 +31,52 @@ export default function ResetPasswordForm() {
   });
 
   async function onSubmit(values: z.infer<typeof resetSchema>) {
+    if (!admin_id) {
+      toast.error('Invalid reset session. Please try again.');
+      return;
+    }
+
     setLoading(true);
     try {
-      await mockResetPassword({ admin_id, new_password: values.new_password });
-      router.push('/auth/login');
-    } catch (err) {
+      await resetPassword({
+        admin_id,
+        new_password: values.new_password,
+      });
+
+      toast.success('Password updated successfully! Redirecting to login...');
+      
+     
+      localStorage.removeItem('adminToken');
+      
+      setTimeout(() => {
+        router.push('/auth/login');
+      }, 1500);
+    } catch (err: unknown) {
+      let message = 'Unable to process password reset';
+      let fieldError: 'new_password' | 'confirm_password' | null = null;
+
+      if (err instanceof Error) {
+        message = err.message;
+
+     
+        if (message.toLowerCase().includes('password')) {
+          fieldError = 'new_password';
+        }
+      }
+
+    
+      if (fieldError) {
+        form.setError(fieldError, { 
+          type: 'server', 
+          message 
+        });
+      }
+
+      toast.error(message);
       console.error('Reset password error:', err);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   return (
@@ -50,7 +89,7 @@ export default function ResetPasswordForm() {
           <FormField 
             control={form.control} 
             name="new_password" 
-            render={({ field }) => (
+            render={({ field, fieldState }) => (
               <FormItem>
                 <FormLabel className="text-white text-sm font-medium tracking-wide">New Password</FormLabel>
                 <FormControl>
@@ -61,7 +100,9 @@ export default function ResetPasswordForm() {
                     <Input 
                       type="password" 
                       placeholder="Enter new password" 
-                      className="bg-gray-900/50 border-gray-700 text-white pl-10 h-11 rounded-lg focus:border-green-400 focus:ring-green-400/20"
+                      className={`bg-gray-900/50 border-gray-700 text-white pl-10 h-11 rounded-lg focus:border-green-400 focus:ring-green-400/20 transition-colors ${
+                        fieldState.error ? 'border-red-500 focus:border-red-500 focus:ring-red-400/20' : ''
+                      }`}
                       {...field} 
                     />
                   </div>
@@ -74,7 +115,7 @@ export default function ResetPasswordForm() {
           <FormField 
             control={form.control} 
             name="confirm_password" 
-            render={({ field }) => (
+            render={({ field, fieldState }) => (
               <FormItem>
                 <FormLabel className="text-white text-sm font-medium tracking-wide">Confirm Password</FormLabel>
                 <FormControl>
@@ -85,7 +126,9 @@ export default function ResetPasswordForm() {
                     <Input 
                       type="password" 
                       placeholder="Confirm new password" 
-                      className="bg-gray-900/50 border-gray-700 text-white pl-10 h-11 rounded-lg focus:border-green-400 focus:ring-green-400/20"
+                      className={`bg-gray-900/50 border-gray-700 text-white pl-10 h-11 rounded-lg focus:border-green-400 focus:ring-green-400/20 transition-colors ${
+                        fieldState.error ? 'border-red-500 focus:border-red-500 focus:ring-red-400/20' : ''
+                      }`}
                       {...field} 
                     />
                   </div>
@@ -95,19 +138,24 @@ export default function ResetPasswordForm() {
             )} 
           />
           
-          <div className="bg-gray-900/30 border border-gray-800 rounded-lg p-4">
-            <h4 className="text-green-400 text-sm font-medium mb-2">Password Requirements:</h4>
-            <ul className="text-gray-400 text-xs space-y-1">
+          <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
+            <h4 className="text-green-400 text-sm font-medium mb-3 flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Password Requirements:
+            </h4>
+            <ul className="text-green-300/80 text-xs space-y-2">
               <li className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 bg-green-400/50 rounded-full"></div>
+                <div className="w-1.5 h-1.5 bg-green-400 rounded-full"></div>
                 Minimum 8 characters
               </li>
               <li className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 bg-green-400/50 rounded-full"></div>
+                <div className="w-1.5 h-1.5 bg-green-400 rounded-full"></div>
                 Use uppercase & lowercase letters
               </li>
               <li className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 bg-green-400/50 rounded-full"></div>
+                <div className="w-1.5 h-1.5 bg-green-400 rounded-full"></div>
                 Include numbers and special characters
               </li>
             </ul>

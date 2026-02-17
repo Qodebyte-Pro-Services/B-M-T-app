@@ -1,150 +1,161 @@
-import { connection } from "next/server";
-import { admins, otps } from "./db";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://primelabs.maskiadmin-management.com/api';
 
-const delay = (ms = 500) => new Promise((r) => setTimeout(r, ms));
-const uuid = () => crypto.randomUUID();
+class APIError extends Error {
+  status: number;
+  data: Record<string, unknown>;
 
-
-
-function createOtp(entity_id: string, purpose: string) {
-  const otp = "123456";
-
-  otps.push({
-    id: uuid(),
-    entity_id,
-    entity_type: "Admin",
-    otp,
-    purpose,
-    expires_at: new Date(Date.now() + 10 * 60 * 1000),
-    attempts: 0,
-  });
-
-  console.log(`[MOCK OTP] ${purpose.toUpperCase()} for ${entity_id}:`, otp);
-
-  return otp;
+  constructor(
+    message: string,
+    status: number,
+    data: Record<string, unknown>
+  ) {
+    super(message);
+    this.name = 'APIError';
+    this.status = status;
+    this.data = data;
+  }
 }
 
+async function apiRequest<T>(
+  url: string,
+  options: RequestInit
+): Promise<T> {
+  try {
+    const fullUrl = `${API_BASE_URL}${url}`;
+    console.log('🔌 API Request:', fullUrl, options.method);
 
+    const res = await fetch(fullUrl, {
+      method: options.method || 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(options.headers || {}),
+      },
+      credentials: 'include',
+      ...options,
+    });
 
-export async function mockLoginAdmin(data: {
-  email: string;
-  password: string;
-}) {
-  await delay();
+    console.log('📡 Response Status:', res.status, res.statusText);
 
-  const admin = admins.find(
-    (a) => a.email === data.email && a.password === data.password
-  );
+    if (!res.ok) {
+      const errorData = await res.json();
+      console.error('❌ API Error:', errorData);
 
-  if (!admin) throw new Error("Invalid credentials");
-  if (!admin.isVerified) throw new Error("Please verify your account");
+      throw new APIError(
+        errorData.message || `HTTP ${res.status}`,
+        res.status,
+        errorData
+      );
+    }
 
-  createOtp(admin.admin_id, "login");
-
-  return {
-    admin_id: admin.admin_id,
-    admin_email: admin.email,
-  };
+    const data = await res.json();
+    console.log('✅ API Success:', data);
+    return data;
+  } catch (error) {
+    console.error('❌ API Request Failed:', error);
+    throw error;
+  }
 }
 
-export async function mockRegisterAdmin(data: {
+export async function registerAdmin(data: {
   full_name: string;
   email: string;
   password: string;
 }) {
-  await delay();
-
-  if (admins.find((a) => a.email === data.email)) {
-    throw new Error("Admin already exists");
-  }
-
-  const admin_id = uuid();
-
-  admins.push({
-    admin_id,
-    full_name: data.full_name,
-    email: data.email,
-    password: data.password,
-    isVerified: false,
+  return apiRequest<{
+    message: string;
+    admin_id: string;
+  }>('/auth/create', {
+    method: 'POST',
+    body: JSON.stringify(data),
   });
-
-  createOtp(admin_id, "register");
-
-  return { admin_id };
 }
 
+export async function loginAdmin(data: {
+  email: string;
+  password: string;
+}) {
+  return apiRequest<{
+    message: string;
+    admin_id: string;
+    admin_email: string;
+    attempt_id?: string;
+    approvers_notified?: number;
+  }>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
 
-
-export async function mockVerifyOtp(data: {
+export async function verifyOtp(data: {
   admin_id: string;
   otp: string;
-  purpose: string;
+  purpose: 'register' | 'login' | 'reset_password' | 'login_approved';
 }) {
-  await delay();
-
-  const record = otps.find(
-    (o) =>
-      o.entity_id === data.admin_id &&
-      o.entity_type === "Admin" &&
-      o.otp === data.otp &&
-      o.purpose === data.purpose
-  );
-
-  if (!record) throw new Error("Invalid OTP");
-  if (record.expires_at < new Date()) throw new Error("OTP expired");
-
-  record.attempts += 1;
-  if (record.attempts > 5) throw new Error("Too many attempts");
-
-  const admin = admins.find((a) => a.admin_id === data.admin_id);
-  if (!admin) throw new Error("Admin not found");
-
-  if (data.purpose === "register") {
-    admin.isVerified = true;
-  }
-
- 
-  otps.splice(otps.indexOf(record), 1);
-
-  return {
-    token: "mock-jwt-token",
-  };
+  return apiRequest<{
+    message: string;
+    token: string;
+    admin: Record<string, unknown>;
+  }>('/auth/verify', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
 }
 
-
-
-export async function mockForgotPassword(data: { email: string }) {
-  await connection(); 
-  await delay();
-
-  const admin = admins.find((a) => a.email === data.email);
-  if (!admin) throw new Error("Admin with this email does not exist");
-
-  createOtp(admin.admin_id, "reset_password");
-
-  return { admin_id: admin.admin_id };
+export async function verifyApprovedLoginOtp(data: {
+  admin_id: string;
+  otp: string;
+  login_attempt_id: string;
+}) {
+  return apiRequest<{
+    message: string;
+    token: string;
+    admin: Record<string, unknown>;
+  }>('/auth/verify-approved-login', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
 }
 
-export async function mockResetPassword(data: {
+export async function resendOtp({
+  email,
+  purpose,
+  login_attempt_id,
+}: {
+  email: string;
+  purpose: string;
+  login_attempt_id?: string;
+}) {
+  return apiRequest<{
+    message: string;
+    admin_id: string;
+  }>('/auth/resend-otp', {
+    method: 'POST',
+    body: JSON.stringify({
+      email,
+      purpose,
+      ...(login_attempt_id && { login_attempt_id }),
+    }),
+  });
+}
+
+export async function forgotPassword(data: { email: string }) {
+  return apiRequest<{
+    message: string;
+    admin_id: string;
+  }>('/auth/forgot-password', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function resetPassword(data: {
   admin_id: string;
   new_password: string;
 }) {
-  await delay();
-
-  const admin = admins.find((a) => a.admin_id === data.admin_id);
-  if (!admin) throw new Error("Admin not found");
-
-  admin.password = data.new_password;
-
-  
-  for (let i = otps.length - 1; i >= 0; i--) {
-    if (
-      otps[i].entity_id === data.admin_id &&
-      otps[i].purpose === "reset_password"
-    ) {
-      otps.splice(i, 1);
-    }
-  }
-
-  return { success: true };
+  return apiRequest<{
+    message: string;
+  }>('/auth/reset-password', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
 }

@@ -12,41 +12,41 @@ import {
   Calendar,
   Wallet
 } from "lucide-react";
-import { Transaction } from '@/app/utils/type';
 
 interface SalesKPIsProps {
-  transactions: Transaction[];
+  kpiData: {
+    summary: {
+      total_transactions: number;
+      total_sales_amount: number;
+      subtotal: number;
+      total_tax: number;
+      total_discount: number;
+      average_transaction_value: number | string;
+    };
+    purchase_types: {
+      distribution: Record<string, { count: number; total_amount: number }>;
+      total_transactions: number;
+    };
+    payment_methods: {
+      distribution: Record<string, { count: number; total_amount: number; percentage?: number | string }>;
+      total_transactions: number;
+      credit_breakdown: {
+        full_credit: number;
+        partial_credit: number;
+        total_credit: number;
+      };
+    };
+  };
 }
 
-export function SalesKPIs({ transactions }: SalesKPIsProps) {
+export function SalesKPIs({ kpiData }: SalesKPIsProps) {
+  const { summary, purchase_types, payment_methods } = kpiData;
   
-  const totalOrders = transactions.length;
-  const totalAmount = transactions.reduce((sum, t) => sum + t.total, 0);
-  const totalDiscount = transactions.reduce((sum, t) => sum + (t.totalDiscount || 0), 0);
-
-
-  const creditTransactions = transactions.filter(t => t.paymentMethod === 'credit');
-const totalCreditValue = creditTransactions.reduce((sum, t) => sum + t.total, 0);
-const fullCreditCount = creditTransactions.filter(t => t.credit?.creditType === 'full').length;
-const partialCreditCount = creditTransactions.filter(t => t.credit?.creditType === 'partial').length;
-
-  
-  
-  const paymentMethods = transactions.reduce((acc, t) => {
-    acc[t.paymentMethod] = (acc[t.paymentMethod] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-  
-  const totalPaymentTransactions = Object.values(paymentMethods).reduce((a, b) => a + b, 0);
-  
- 
-  const purchaseTypes = transactions.reduce((acc, t) => {
-    const type = t.purchaseType || 'in-store';
-    acc[type] = (acc[type] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>);
-  
-  const totalPurchaseTransactions = Object.values(purchaseTypes).reduce((a, b) => a + b, 0);
+  const totalOrders = summary.total_transactions;
+  const totalAmount = summary.total_sales_amount;
+  const totalDiscount = summary.total_discount;
+  const totalPaymentTransactions = payment_methods.total_transactions;
+  const totalPurchaseTransactions = purchase_types.total_transactions;
 
   const kpis = [
     {
@@ -58,20 +58,25 @@ const partialCreditCount = creditTransactions.filter(t => t.credit?.creditType =
     },
     {
       title: "Total Amount",
-      value: `NGN ${totalAmount.toFixed(2)}`,
+      value: `NGN ${Number(totalAmount).toFixed(2)}`,
       icon: DollarSign,
       color: "bg-green-500",
       description: "Total revenue"
     },
     {
       title: "Total Discount",
-      value: `NGN ${totalDiscount.toFixed(2)}`,
+      value: `NGN ${Number(totalDiscount).toFixed(2)}`,
       icon: DollarSign,
       color: "bg-purple-500",
       description: "Total discounts given"
+    },
+    {
+      title: "Total Tax",
+      value: `NGN ${Number(summary.total_tax).toFixed(2)}`,
+      icon: DollarSign,
+      color: "bg-orange-500",
+      description: "Total tax collected"
     }
-
-   
   ];
 
   return (
@@ -102,9 +107,9 @@ const partialCreditCount = creditTransactions.filter(t => t.credit?.creditType =
           </div>
           
           <div  className="grid grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-6 lg:gap-2">
-            {Object.entries(purchaseTypes).map(([type, count]) => {
+            {Object.entries(purchase_types.distribution).map(([type, data]) => {
               const percentage = totalPurchaseTransactions > 0 
-                ? ((count / totalPurchaseTransactions) * 100).toFixed(1)
+                ? ((data.count / totalPurchaseTransactions) * 100).toFixed(1)
                 : "0.0";
               
               return (
@@ -124,7 +129,7 @@ const partialCreditCount = creditTransactions.filter(t => t.credit?.creditType =
                         {type === 'in-store' ? 'In-Store' : 'Online'}
                       </div>
                       <div className="text-sm text-gray-500">
-                        {count} transactions
+                        {data.count} transactions
                       </div>
                     </div>
                   </div>
@@ -152,9 +157,9 @@ const partialCreditCount = creditTransactions.filter(t => t.credit?.creditType =
           </div>
           
           <div className="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
-            {Object.entries(paymentMethods).map(([method, count]) => {
+            {Object.entries(payment_methods.distribution).map(([method, data]) => {
               const percentage = totalPaymentTransactions > 0 
-                ? ((count / totalPaymentTransactions) * 100).toFixed(1)
+                ? ((data.count / totalPaymentTransactions) * 100).toFixed(1)
                 : "0.0";
               
               const getMethodIcon = (method: string) => {
@@ -191,11 +196,11 @@ const partialCreditCount = creditTransactions.filter(t => t.credit?.creditType =
       <span className="font-medium capitalize">{method}</span>
     </div>
 
-    <div className="text-2xl font-bold mb-2">{count}</div>
+    <div className="text-2xl font-bold mb-2">{data.count}</div>
 
     <div className="text-xs text-gray-600 space-y-1 text-center">
-      <div>Full: {fullCreditCount}</div>
-      <div>Partial: {partialCreditCount}</div>
+      <div>Full: {payment_methods.credit_breakdown.full_credit}</div>
+      <div>Partial: {payment_methods.credit_breakdown.partial_credit}</div>
     </div>
 
     <Badge
@@ -217,7 +222,7 @@ const partialCreditCount = creditTransactions.filter(t => t.credit?.creditType =
       </span>
     </div>
 
-    <div className="text-2xl font-bold mb-1">{count}</div>
+    <div className="text-2xl font-bold mb-1">{data.count}</div>
 
     <Badge variant="secondary" className={getMethodColor(method)}>
       {percentage}%

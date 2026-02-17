@@ -8,13 +8,18 @@ import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { AuthForm } from '@/app/components/AuthForm';
-import { mockRegisterAdmin as registerAdmin } from "@/app/mock/auth";
+import { toast } from 'sonner';
 import Link from 'next/link';
+import { registerAdmin } from '@/app/mock/auth';
 
 const registerSchema = z.object({
   full_name: z.string().min(2, 'Full name must be at least 2 characters'),
-  email: z.string().email('Invalid email'),
+  email: z.string().email('Invalid email address'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
+  confirmPassword: z.string(),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"],
 });
 
 export default function RegisterPage() {
@@ -23,16 +28,54 @@ export default function RegisterPage() {
 
   const form = useForm<z.infer<typeof registerSchema>>({
     resolver: zodResolver(registerSchema),
-    defaultValues: { full_name: '', email: '', password: '' },
+    defaultValues: { 
+      full_name: '', 
+      email: '', 
+      password: '',
+      confirmPassword: '',
+    },
   });
 
   async function onSubmit(values: z.infer<typeof registerSchema>) {
     setLoading(true);
     try {
-      const { admin_id } = await registerAdmin(values);
-      router.push(`/auth/verify-otp?admin_id=${admin_id}&purpose=register&email=${values.email}`);
-    } catch (err) {
-      console.error('Registration error:', err);
+      const { admin_id } = await registerAdmin({
+        full_name: values.full_name,
+        email: values.email,
+        password: values.password,
+      });
+
+      toast.success('Registration successful! Check your email for OTP.');
+      
+      router.push(
+        `/auth/verify-otp?admin_id=${admin_id}&purpose=register&email=${values.email}`
+      );
+    } catch (err: unknown) {
+      let message = 'Unable to process registration';
+      let fieldError: 'email' | 'password' | 'full_name' | null = null;
+
+      if (err instanceof Error) {
+        message = err.message;
+
+       
+        if (message.toLowerCase().includes('email')) {
+          fieldError = 'email';
+        } else if (message.toLowerCase().includes('password')) {
+          fieldError = 'password';
+        } else if (message.toLowerCase().includes('name')) {
+          fieldError = 'full_name';
+        }
+      }
+
+      
+      if (fieldError) {
+        form.setError(fieldError, { 
+          type: 'server', 
+          message 
+        });
+      }
+
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -40,8 +83,8 @@ export default function RegisterPage() {
 
   return (
     <AuthForm 
-      title="Request Access" 
-      description="Register for administrator privileges"
+      title="Create Admin Account" 
+      description="Register a new administrator account"
       footer={
         <div className="text-center text-gray-400 text-sm">
           Already have an account?{' '}
@@ -59,32 +102,29 @@ export default function RegisterPage() {
           <FormField 
             control={form.control} 
             name="full_name" 
-            render={({ field }) => (
+            render={({ field, fieldState }) => (
               <FormItem>
                 <FormLabel className="text-white text-sm font-medium tracking-wide">Full Name</FormLabel>
                 <FormControl>
-                  <div className="relative">
-                    <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                    </svg>
-                    <Input 
-                      placeholder="John Smith" 
-                      className="bg-gray-900/50 border-gray-700 text-white pl-10 h-11 rounded-lg focus:border-green-400 focus:ring-green-400/20"
-                      {...field} 
-                    />
-                  </div>
+                  <Input 
+                    placeholder="Enter your full name" 
+                    className={`bg-gray-900/50 border-gray-700 text-white h-11 rounded-lg focus:border-green-400 focus:ring-green-400/20 transition-colors ${
+                      fieldState.error ? 'border-red-500 focus:border-red-500 focus:ring-red-400/20' : ''
+                    }`}
+                    {...field} 
+                  />
                 </FormControl>
                 <FormMessage className="text-red-400 text-xs" />
               </FormItem>
             )} 
           />
-          
+
           <FormField 
             control={form.control} 
             name="email" 
-            render={({ field }) => (
+            render={({ field, fieldState }) => (
               <FormItem>
-                <FormLabel className="text-white text-sm font-medium tracking-wide">Work Email</FormLabel>
+                <FormLabel className="text-white text-sm font-medium tracking-wide">Email Address</FormLabel>
                 <FormControl>
                   <div className="relative">
                     <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -92,8 +132,10 @@ export default function RegisterPage() {
                     </svg>
                     <Input 
                       type="email" 
-                      placeholder="john.smith@bigmentransaction.com" 
-                      className="bg-gray-900/50 border-gray-700 text-white pl-10 h-11 rounded-lg focus:border-green-400 focus:ring-green-400/20"
+                      placeholder="Enter your email" 
+                      className={`bg-gray-900/50 border-gray-700 text-white pl-10 h-11 rounded-lg focus:border-green-400 focus:ring-green-400/20 transition-colors ${
+                        fieldState.error ? 'border-red-500 focus:border-red-500 focus:ring-red-400/20' : ''
+                      }`}
                       {...field} 
                     />
                   </div>
@@ -102,13 +144,13 @@ export default function RegisterPage() {
               </FormItem>
             )} 
           />
-          
+
           <FormField 
             control={form.control} 
             name="password" 
-            render={({ field }) => (
+            render={({ field, fieldState }) => (
               <FormItem>
-                <FormLabel className="text-white text-sm font-medium tracking-wide">Secure Password</FormLabel>
+                <FormLabel className="text-white text-sm font-medium tracking-wide">Password</FormLabel>
                 <FormControl>
                   <div className="relative">
                     <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -117,14 +159,39 @@ export default function RegisterPage() {
                     <Input 
                       type="password" 
                       placeholder="Minimum 8 characters" 
-                      className="bg-gray-900/50 border-gray-700 text-white pl-10 h-11 rounded-lg focus:border-green-400 focus:ring-green-400/20"
+                      className={`bg-gray-900/50 border-gray-700 text-white pl-10 h-11 rounded-lg focus:border-green-400 focus:ring-green-400/20 transition-colors ${
+                        fieldState.error ? 'border-red-500 focus:border-red-500 focus:ring-red-400/20' : ''
+                      }`}
                       {...field} 
                     />
                   </div>
                 </FormControl>
-                <div className="text-gray-500 text-xs mt-1">
-                  • Must be at least 8 characters
-                </div>
+                <FormMessage className="text-red-400 text-xs" />
+              </FormItem>
+            )} 
+          />
+
+          <FormField 
+            control={form.control} 
+            name="confirmPassword" 
+            render={({ field, fieldState }) => (
+              <FormItem>
+                <FormLabel className="text-white text-sm font-medium tracking-wide">Confirm Password</FormLabel>
+                <FormControl>
+                  <div className="relative">
+                    <svg className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                    <Input 
+                      type="password" 
+                      placeholder="Confirm your password" 
+                      className={`bg-gray-900/50 border-gray-700 text-white pl-10 h-11 rounded-lg focus:border-green-400 focus:ring-green-400/20 transition-colors ${
+                        fieldState.error ? 'border-red-500 focus:border-red-500 focus:ring-red-400/20' : ''
+                      }`}
+                      {...field} 
+                    />
+                  </div>
+                </FormControl>
                 <FormMessage className="text-red-400 text-xs" />
               </FormItem>
             )} 
@@ -138,15 +205,10 @@ export default function RegisterPage() {
             {loading ? (
               <span className="flex items-center justify-center gap-2">
                 <div className="w-4 h-4 border-2 border-black border-t-transparent rounded-full animate-spin"></div>
-                Processing Request...
+                Creating Account...
               </span>
             ) : (
-              <span className="flex items-center justify-center gap-2">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                </svg>
-                Request Administrator Access
-              </span>
+              'Create Account'
             )}
           </Button>
         </form>

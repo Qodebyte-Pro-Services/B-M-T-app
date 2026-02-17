@@ -1,7 +1,53 @@
+import { DollarSign, Home, Package, Settings, ShoppingCart, Users, Workflow } from "lucide-react";
+import { ImageUrl } from "./imageHelper";
+
+
 export interface ProductAttribute {
   id: string;
   name: string;
   values: string[];
+}
+
+export interface Admin {
+  full_name: string;
+  email: string;
+  password: string;
+}
+
+export interface AdminData {
+  id: string;
+  full_name: string;
+}
+
+export interface Category {
+  id: string;
+  name: string;
+}
+
+export interface AttributeValue {
+  id: string;
+  value: string;
+}
+
+export interface Attribute {
+  id: string;
+  name: string;
+  values: AttributeValue[];
+}
+
+export interface Variant {
+  sku: string;
+  cost_price: number;
+  selling_price: number;
+  quantity: number;
+  barcode?: string;
+  attributes?: Record<string, string>;
+  image_url?: File[];
+}
+
+export interface AttributeSelection {
+  name: string;
+  value: string;
 }
 
 export interface ProductVariant {
@@ -17,6 +63,19 @@ export interface ProductVariant {
   images: string[];
 }
 
+export interface ProductVariantDetails {
+  id: string;
+  name: string;
+  sku: string;
+  barcode: string; 
+  attributes: Record<string, string>;
+  cost_price: string;
+  selling_price: string;
+  quantity: number;
+  threshold: number;
+   image_url?: string | ImageUrl[];
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -26,7 +85,7 @@ export interface Product {
   description: string;
   taxable: boolean;
   unit: string;
-  hasVariations: boolean;
+  hasVariation: boolean;
   images: string[];
   variants: ProductVariant[];
   inventoryValue: number;
@@ -35,6 +94,46 @@ export interface Product {
   totalRevenue: number;
     discount?: Discount;
 }
+
+export type CreateProductPayload = {
+  name: string;
+  brand: string;
+  categoryId: string;
+  unit: string;
+  taxable: boolean;
+  description: string;
+  images: File[];
+
+  hasVariations: boolean;
+
+  baseSku: string;
+
+  productStock?: {
+    costPrice: number;
+    sellingPrice: number;
+    quantity: number;
+    threshold: number;
+    barcode: string;
+  };
+
+  variants?: {
+    name: string;
+    sku: string;
+    barcode: string;
+    costPrice: number;
+    sellingPrice: number;
+    quantity: number;
+    threshold: number;
+    images: File[];
+  }[];
+};
+
+export type ProductAttributeState = {
+    id: string;
+  name: string;
+  values: string[];
+  attributeId?: string;
+};
 
 export interface ProductFormData {
   productName: string;
@@ -61,26 +160,118 @@ export type EditProductFormData = {
   hasVariations: boolean;
 };
 
+export interface OrderItemAPI {
+  id: string;
+  product_id: string;
+  variant_id: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  Variant?: {
+    sku: string;
+    Product?: {
+      name: string;
+    };
+  };
+}
+
+export interface OrderPaymentAPI {
+  id: string;
+  order_id: number;
+  method: string;
+  amount: number | string;
+  reference: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface Sale {
+  id: string;
+  customer_id: string;
+  Customer?: {
+    id: string;
+    name: string;
+    email?: string;
+    phone?: string;
+    is_walk_in?: boolean;
+  };
+  subtotal: number | string;
+  tax_total: number | string;
+  discount_total: number | string;
+  total_amount: number | string;
+  status: string;
+  purchase_type: string;
+  source: string;
+  admin_id: string;
+  createdAt: string;
+  updatedAt: string;
+  OrderItems?: OrderItemAPI[];
+  OrderPayments?: OrderPaymentAPI[];  // Changed from OrderPayment to OrderPayments (plural)
+  CreditAccount?: { type: string } | null;
+  InstallmentPlan?: { id: string; status: string } | null;
+}
+
+
+export interface TopVariant {
+  rank: number;
+  variant_id: string;
+
+  sku?: string;
+
+  product: {
+    id: string;
+    name: string;
+    brand?: string;
+    category: {
+      id: string;
+      name: string;
+    };
+  };
+
+   image: { url: string }[] | null;
+
+  sales_metrics: {
+    total_quantity: number;
+    total_revenue: number;
+    total_orders: number;
+    average_price: number;
+  };
+
+  profit_metrics?: {
+    unit_cost: number;
+    unit_selling_price: number;
+    unit_profit: number;
+    total_cost: number;
+    total_profit: number;
+    profit_margin_percent: number;
+  };
+}
+
+
 export interface CartItem {
   id: string;
-  productId: string;
-  variantId: string;
+  productId: number;
+  variantId: number;
   productName: string;
   variantName: string;
   sku: string;
   price: number;
   quantity: number;
-  taxable: boolean;
-  image: string;
-  stock: number;
+  taxable?: boolean;
+  image?: string;
+  stock?: number;
   productDiscount?: Discount;
 }
 
 export interface Customer {
   id: string;
   name: string;
-  email?: string;
-  phone?: string;
+  email?: string | null;
+  phone?: string | null;
+  is_walk_in?: boolean;
+  created_at?: string;
+  updated_at?: string;
+  is_deleted?: boolean;
 }
 
 export interface Draft {
@@ -142,6 +333,7 @@ export interface Transaction {
   change: number;
   timestamp: string;
   synced: boolean;
+  status?: 'pending' | 'completed' | 'failed';
   purchaseType?: 'in-store' | 'online';
   installmentPlan?: InstallmentPlan;
   splitPayments?: { method: string; amount: number }[];
@@ -153,6 +345,15 @@ export interface Transaction {
     amountPaidTowardCredit: number; 
 }
 }
+
+export type DateFilter =
+  | "today"
+  | "yesterday"
+  | "last7"
+  | "thisMonth"
+  | "lastMonth"
+  | "custom";
+
 
 export interface InstallmentTransaction {
   id: string;
@@ -173,30 +374,41 @@ export interface InstallmentTransaction {
   timestamp: string;
 }
 
-export const customers: Customer[] = [
-  { id: 'walk-in', name: 'Walk-in Customer' },
-  { id: 'cust-1', name: 'John Doe', email: 'john@example.com', phone: '+1234567890' },
-  { id: 'cust-2', name: 'Jane Smith', email: 'jane@example.com', phone: '+0987654321' },
-  { id: 'cust-3', name: 'Robert Johnson', email: 'robert@example.com', phone: '+1122334455' },
-];
+
 
 export type Expense = {
   id: string;
-  name: string;
-  categoryId: string;
-  amount: number;
-  note?: string;
-  receiptUrl?: string;
-  status: 'approved' | 'pending' | 'rejected';
-  approvedBy?: string;
-  createdBy: string;
-  expenseDate: string;
+  expense_amount: number;
+  note: string;
+  date: string;
+  expense_category_id: string;
+  admin_id: string;
+  payment_method: string;
+  payment_status: string;
+  expense_reciept_url: string | null;
+  expense_approved_by: string | null;
+  status: 'pending' | 'approved' | 'rejected';
   createdAt: string;
-  month: string;
+  updatedAt: string;
+  expense_category?: { expense_category_id: string; name: string };
+  admin?: { id: string; email: string; full_name: string };
+
 };
 
+export interface CompanySettings {
+  settings_id: string;
+  site_name: string;
+  site_logo: string | null;
+  owner_first_name: string | null;
+  owner_last_name: string | null;
+  owner_email: string | null;
+  company_email: string | null;
+  company_phone: string | null;
+  company_address: string | null;
+}
+
 export type ExpenseCategory = {
-  id: string;
+  expense_category_id: string;
   name: string;
 };
 
@@ -277,116 +489,108 @@ export const loginAttempts = [
             },
           ];
 
-export type DiscountType = "percentage" | "fixed";
-export  type DiscountStatus = "active" | "expired";
+export type DiscountType = "percentage" | "fixed_amount";
+export type DiscountStatus = "active" | "expired";
 
 export type Discount = {
-  id: string;
+  id: number;
   name: string;
   type: DiscountType;
+  percentage?: number;
+  fixed_amount?: number;
   value: number;
   startDate?: string;
   endDate?: string;
   status: DiscountStatus;
 };
 
- export const mockProducts: Product[] = [
-  {
-    id: "1",
-    name: "Premium Leather Jacket",
-    sku: "PLJ-001",
-    brand: "Gucci",
-    category: "Jackets",
-    description: "Premium leather jacket",
-    taxable: true,
-    unit: "Pieces",
-    hasVariations: true,
-    images: ["https://images.unsplash.com/photo-1551028719-00167b16eac5"],
-    discount: {
-      id: 'dis1',
-      name: "Winter Sale",
-      type: "percentage",
-      value: 10,
-      status: 'expired'
-    },
-    variants: [
-      {
-        id: "1-1",
-        name: "Red - XL",
-        sku: "GUCCI-RED-XL-JACKET",
-        barcode: "PRD-894521-A7K2",
-        attributes: { Color: "Red", Size: "XL" },
-        costPrice: 150,
-        sellingPrice: 299.99,
-        quantity: 42,
-        threshold: 10,
-        images: ["https://images.unsplash.com/photo-1551028719-00167b16eac5"],
-      },
-      {
-        id: "1-2",
-        name: "Black - L",
-        sku: "GUCCI-BLACK-L-JACKET",
-        barcode: "PRD-894521-B9M5",  
-        attributes: { Color: "Black", Size: "L" },
-        costPrice: 150,
-        sellingPrice: 299.99,
-        quantity: 8,
-        threshold: 10,
-        images: ["https://images.unsplash.com/photo-1591047139829-d91aecb6caea"]
-      },
-    ],
-    inventoryValue: 15499.58,
-    inventoryCost: 7500,
-    totalStock: 50,
-    totalRevenue: 29999.00,
-  },
-  {
-    id: "2",
-    name: "Designer Denim Jeans",
-    sku: "DDJ-002",
-    brand: "Levi's",
-    category: "Pants",
-    description: "Designer denim jeans",
-    taxable: true,
-    unit: "Pieces",
-    hasVariations: true,
-    images: ["https://images.unsplash.com/photo-1542272604-787c3835535d"],
-    discount: {
-      id: 'dis2',
-      name: "Winter Sale",
-      type: "fixed",
-      value: 30,
-      status: 'active'
-    },
-    variants: [
-      {
-        id: "2-1",
-        name: "Blue - 32",
-        sku: "LEVIS-BLUE-32-JEANS",
-        barcode: "PRD-123456-C3P8", 
-        attributes: { Color: "Blue", Size: "32" },
-        costPrice: 45,
-        sellingPrice: 89.99,
-        quantity: 0,
-        threshold: 5,
-        images: ["https://images.unsplash.com/photo-1542272604-787c3835535d"]
-      },
-      {
-        id: "2-2",
-        name: "Black - 34",
-        sku: "LEVIS-BLACK-34-JEANS",
-        barcode: "PRD-123456-D7R1",  
-        attributes: { Color: "Black", Size: "34" },
-        costPrice: 45,
-        sellingPrice: 89.99,
-        quantity: 25,
-        threshold: 5,
-        images: ["https://images.unsplash.com/photo-1542272604-787c3835535d"]
-      },
-    ],
-    inventoryValue: 2249.75,
-    inventoryCost: 1125,
-    totalStock: 25,
-    totalRevenue: 4499.50,
-  },
-];
+
+// export const navigation: NavigationItem[] = [
+//   {
+//     name: "Dashboard",
+//     href: "/dashboard",
+//     icon: Home,
+//     permissions: [
+//       "view_inventory",
+//       "view_expenses",
+//       "view_customer",
+//       "view_staff",
+//       "view_settings",
+//       "view_login_attempts",
+//     ],
+//   },
+//   {
+//     name: "Inventory",
+//     href: "/inventory",
+//     icon: Package,
+//     permissions: ["view_inventory"],
+//   },
+//   {
+//     name: "Sales",
+//     href: "/sales",
+//     icon: ShoppingCart,
+//     permissions: ["view_sales"],
+//   },
+//   {
+//     name: "Expenses",
+//     href: "/expenses",
+//     icon: DollarSign,
+//     permissions: ["view_expenses"],
+//   },
+//   {
+//     name: "Customers",
+//     href: "/customers",
+//     icon: Users,
+//     permissions: ["view_customer"],
+//   },
+//   {
+//     name: "Staffs",
+//     href: "/staffs",
+//     icon: Workflow,
+//     permissions: ["view_staff"],
+//   },
+//   {
+//     name: "Settings",
+//     href: "/settings",
+//     icon: Settings,
+//     permissions: ["view_settings"],
+//   },
+// ];
+
+export interface AdminDetail {
+  admin_id: string;
+  email: string;
+  role?: string;
+   permissions?: string[];
+  verified?: boolean;
+  reset?: boolean;
+  iat?: number;
+  exp?: number;
+  full_name?: string;
+  username?: string;
+}
+
+export interface ReceiptTransaction {
+  id: string;
+  customer: Customer;
+  items: CartItem[];
+  subtotal: number;
+  tax: number;
+  total: number;
+  totalDiscount: number;
+  paymentMethod: string;
+  amountPaid: number;
+  change: number;
+  timestamp: string;
+  purchaseType: 'in-store' | 'online';
+  installmentPlan?: {
+    numberOfPayments: number;
+    amountPerPayment: number;
+    paymentFrequency: 'daily' | 'weekly' | 'monthly';
+    startDate: string;
+    notes: string;
+    downPayment: number;
+    remainingBalance: number;
+  };
+  splitPayments?: { method: string; amount: number }[];
+}

@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { InventoryLayout } from '@/app/inventory/components/InventoryLayout';
 import { format } from 'date-fns';
+import { toast } from 'sonner';
 
 type Staff = {
   id: string;
@@ -47,16 +48,21 @@ type Staff = {
 };
 
 type Role = {
-  id: string;
-  name: string;
+  roles_id: string;
+  role_name: string;
   permissions: string[];
+  role_count: number;
 };
 
 export default function StaffDetailPage() {
   const params = useParams();
   const router = useRouter();
+    const [error, setError] = useState<string | null>(null);
+
+
   const [staff, setStaff] = useState<Staff | null>(null);
   const [loading, setLoading] = useState(true);
+   const isSuperAdmin = staff?.role === "Super Admin";
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isCredentialDialogOpen, setIsCredentialDialogOpen] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -74,91 +80,220 @@ export default function StaffDetailPage() {
     confirmPassword: '',
   });
 
-  const [roles] = useState<Role[]>([
-    { id: 'role-1', name: 'Administrator', permissions: ['all'] },
-    { id: 'role-2', name: 'Manager', permissions: ['products', 'sales', 'customers'] },
-    { id: 'role-3', name: 'Sales Staff', permissions: ['sales', 'customers'] },
-    { id: 'role-4', name: 'Inventory Manager', permissions: ['products', 'stock'] },
-  ]);
+  const [roles, setRoles] = useState<Role[]>([]);
 
-  useEffect(() => {
+    const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://primelabs.maskiadmin-management.com/api';
 
-    const mockStaff: Staff = {
-      id: params.id as string,
-      full_name: 'John Doe',
-      username: 'johndoe',
-      email: 'john@business.com',
-      phone: '+234 123 456 7890',
-      address: '123 Business Street, Victoria Island',
-      state: 'Lagos',
-      role: 'Administrator',
-      status: 'active',
-      createdAt: '2024-01-01',
-      lastLogin: '2024-01-15 10:30:00',
-      avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=John',
-    };
-    
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setStaff(mockStaff);
+  const getAuthToken = () => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('adminToken');
+    }
+    return null;
+  };
+
+
+   
+const fetchRoles = async () => {
+  try {
+    const token = getAuthToken();
+    if (!token) throw new Error("No authentication token found");
+
+    const response = await fetch(`${apiUrl}/roles?page=1&limit=100`, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch roles: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+   
+    const transformedRoles: Role[] = data.roles.map((role: Role) => ({
+      roles_id: role.roles_id,
+      role_name: role.role_name,
+      permissions: Array.isArray(role.permissions) ? role.permissions : [],
+      role_count: role.role_count || 0,
+    }));
+
+    setRoles(transformedRoles);
+    setError(null);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to fetch roles";
+    console.error("Error fetching roles:", err);
+    setError(message);
+    toast.error(message);
+  }
+};
+
+
+useEffect(() => {
+  const fetchStaff = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch(`${apiUrl}/auth/${params.id}`, {
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${getAuthToken()}`,
+        },
+        credentials: "include", 
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to fetch staff: ${res.status}`);
+      }
+
+      const data = await res.json();
+      const admin = data.admin;
+
+      if (!admin) {
+        setStaff(null);
+        setLoading(false);
+        return;
+      }
+
+      
+const mappedStaff: Staff = {
+  id: admin.admin_id,
+  full_name: admin.full_name ?? "",
+  username: admin.username ?? "",
+  email: admin.email ?? "",
+  phone: admin.phone ?? "",
+  address: admin.address ?? "",
+  state: admin.state ?? "",
+  role: admin.Role?.role_name ?? "",
+  status: admin.status === "active" ? "active" : "inactive",
+  createdAt: admin.createdAt,
+  lastLogin: admin.last_login ?? undefined,
+  avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(admin.full_name ?? "user")}`,
+};
+
+     
+
+      const roleName = admin.Role?.role_name ?? '';
+
+      setStaff(mappedStaff);
     setEditForm({
-      full_name: mockStaff.full_name,
-      email: mockStaff.email,
-      phone: mockStaff.phone,
-      address: mockStaff.address,
-      state: mockStaff.state,
-      role: mockStaff.role,
-    });
-    setCredentialForm({
-      email: mockStaff.email,
-      password: '',
-      confirmPassword: '',
-    });
-    setLoading(false);
-  }, [params.id]);
+  full_name: mappedStaff.full_name ?? "",
+  email: mappedStaff.email ?? "",
+  phone: mappedStaff.phone ?? "",
+  address: mappedStaff.address ?? "",
+  state: mappedStaff.state ?? "",
+  role: roles.some(r => r.role_name === roleName) ? roleName : "",
+});
 
-  const handleEditSave = () => {
-    if (!staff) return;
-    
 
-    const updatedStaff = {
-      ...staff,
-      ...editForm,
-    };
-    
-    setStaff(updatedStaff);
+      setCredentialForm({
+        email: mappedStaff.email,
+        password: "",
+        confirmPassword: "",
+      });
+
+      setLoading(false);
+    } catch (error) {
+      console.error("Error fetching staff:", error);
+      setStaff(null);
+      setLoading(false);
+    }
+  };
+
+  fetchStaff();
+  fetchRoles();
+}, [params.id]);
+
+
+  const handleEditSave = async () => {
+  if (!staff) return;
+
+  const selectedRole = roles.find(r => r.role_name === editForm.role);
+
+  try {
+    const res = await fetch(`${apiUrl}/auth/edit`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getAuthToken()}`,
+      },
+      body: JSON.stringify({
+        admin_id: staff.id,              
+        full_name: editForm.full_name,
+        email: editForm.email,
+        phone: editForm.phone,
+        address: editForm.address,
+        state: editForm.state,
+        admin_role: selectedRole?.roles_id 
+      }),
+    });
+
+    if (!res.ok) {
+      const errorData = await res.json();
+      throw new Error(errorData.message || "Failed to update staff");
+    }
+
+    const { admin } = await res.json();
+
+    setStaff(prev =>
+      prev
+        ? {
+            ...prev,
+            full_name: admin.full_name,
+            email: admin.email,
+            phone: admin.phone,
+            address: admin.address,
+            state: admin.state,
+            role: admin.Role?.role_name ?? prev.role,
+          }
+        : prev
+    );
+
     setIsEditDialogOpen(false);
-    alert('Staff details updated successfully!');
-  };
+    toast.success("Staff details updated successfully!");
+  } catch (error: unknown) {
+    console.error("Error updating staff:", error);
+    toast.error(error instanceof Error ? error.message : "Update failed");
+  }
+};
 
-  const handleCredentialSave = () => {
-    if (!credentialForm.password) {
-      alert('Please enter a new password');
-      return;
-    }
-    
-    if (credentialForm.password !== credentialForm.confirmPassword) {
-      alert('Passwords do not match!');
-      return;
-    }
-    
-    if (credentialForm.password.length < 8) {
-      alert('Password must be at least 8 characters long');
-      return;
-    }
-    
 
-    if (staff) {
-      const updatedStaff = {
-        ...staff,
-        email: credentialForm.email,
-      };
-      setStaff(updatedStaff);
+  const handleCredentialSave = async () => {
+  if (!staff) return;
+
+  if (credentialForm.password !== credentialForm.confirmPassword) {
+    toast.error("Passwords do not match");
+    return;
+  }
+
+  try {
+    const res = await fetch(`${apiUrl}/auth/credentials`, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getAuthToken()}`,
+      },
+      body: JSON.stringify({
+        admin_id: staff.id,          
+        newPassword: credentialForm.password,
+      }),
+    });
+
+    if (!res.ok) {
+      const errorData = await res.json();
+      throw new Error(errorData.message || "Failed to update password");
     }
-    
-    alert('Login credentials updated successfully!');
+
+    toast.success("Password updated successfully");
     setIsCredentialDialogOpen(false);
-    setCredentialForm(prev => ({ ...prev, password: '', confirmPassword: '' }));
-  };
+    setCredentialForm({ ...credentialForm, password: "", confirmPassword: "" });
+  } catch (error: unknown) {
+    console.error("Credential update error:", error);
+    toast.error(error instanceof Error ? error.message : "Password update failed");
+  }
+};
+
 
   const getStatusBadge = (status: 'active' | 'inactive') => {
     return status === 'active' ? (
@@ -170,12 +305,12 @@ export default function StaffDetailPage() {
 
   const getRoleBadge = (role: string) => {
     switch (role) {
-      case 'Administrator':
-        return <Badge variant="default">{role}</Badge>;
+      case 'Super Admin':
+        return <Badge variant="destructive">{role}</Badge>;
       case 'Manager':
-        return <Badge variant="secondary">{role}</Badge>;
+        return <Badge variant="default">{role}</Badge>;
       default:
-        return <Badge variant="outline">{role}</Badge>;
+        return <Badge variant="secondary">{role}</Badge>;
     }
   };
 
@@ -218,12 +353,26 @@ export default function StaffDetailPage() {
           </div>
           
           <div className="flex gap-2">
-            <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+         <Dialog
+  open={!isSuperAdmin && isEditDialogOpen}
+  onOpenChange={(open) => {
+    if (isSuperAdmin) {
+      toast.error("Super Admin details cannot be edited");
+      return;
+    }
+    setIsEditDialogOpen(open);
+  }}
+>
+
               <DialogTrigger asChild>
-                <Button variant="secondary">
-                  <Pencil className="w-4 h-4 mr-2" />
-                  Edit Details
-                </Button>
+           <Button
+  variant="secondary"
+  disabled={isSuperAdmin}
+  onClick={() => setIsEditDialogOpen(true)}
+>
+  <Pencil className="w-4 h-4 mr-2" />
+  Edit Details
+</Button>
               </DialogTrigger>
               <DialogContent className="max-w-2xl bg-gray-900">
                 <DialogHeader>
@@ -239,7 +388,7 @@ export default function StaffDetailPage() {
                       <Label htmlFor="edit-fullName">Full Name</Label>
                       <Input
                         id="edit-fullName"
-                        value={editForm.full_name}
+                        value={editForm.full_name || ""}
                         onChange={(e) => setEditForm({...editForm, full_name: e.target.value})}
                       />
                     </div>
@@ -251,7 +400,7 @@ export default function StaffDetailPage() {
                       <Input
                         id="edit-email"
                         type="email"
-                        value={editForm.email}
+                        value={editForm.email || ""}
                         onChange={(e) => setEditForm({...editForm, email: e.target.value})}
                       />
                     </div>
@@ -260,7 +409,7 @@ export default function StaffDetailPage() {
                       <Label htmlFor="edit-phone">Phone Number</Label>
                       <Input
                         id="edit-phone"
-                        value={editForm.phone}
+                        value={editForm.phone || ""}
                         onChange={(e) => setEditForm({...editForm, phone: e.target.value})}
                       />
                     </div>
@@ -269,7 +418,7 @@ export default function StaffDetailPage() {
                       <Label htmlFor="edit-address">Address</Label>
                       <Input
                         id="edit-address"
-                        value={editForm.address}
+                        value={editForm.address || ""}
                         onChange={(e) => setEditForm({...editForm, address: e.target.value})}
                       />
                     </div>
@@ -278,7 +427,7 @@ export default function StaffDetailPage() {
                       <Label htmlFor="edit-state">State</Label>
                       <Input
                         id="edit-state"
-                        value={editForm.state}
+                        value={editForm.state || ""}
                         onChange={(e) => setEditForm({...editForm, state: e.target.value})}
                       />
                     </div>
@@ -286,13 +435,13 @@ export default function StaffDetailPage() {
                   
                   <div className="space-y-2">
                     <Label htmlFor="edit-role">Role</Label>
-                    <Select value={editForm.role} onValueChange={(value) => setEditForm({...editForm, role: value})}>
+                    <Select value={editForm.role || ""} onValueChange={(value) => setEditForm({...editForm, role: value})}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select role" />
                       </SelectTrigger>
                       <SelectContent>
                         {roles.map(role => (
-                          <SelectItem key={role.id} value={role.name}>{role.name}</SelectItem>
+                          <SelectItem key={role.roles_id} value={role.role_name}>{role.role_name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -311,12 +460,27 @@ export default function StaffDetailPage() {
               </DialogContent>
             </Dialog>
             
-            <Dialog open={isCredentialDialogOpen} onOpenChange={setIsCredentialDialogOpen}>
+           <Dialog
+  open={!isSuperAdmin && isCredentialDialogOpen}
+  onOpenChange={(open) => {
+    if (isSuperAdmin) {
+      toast.error("Super Admin credentials cannot be updated");
+      return;
+    }
+    setIsCredentialDialogOpen(open);
+  }}
+>
+
               <DialogTrigger asChild>
-                <Button className="bg-gray-900 hover:bg-gray-800 text-white">
-                  <Key className="w-4 h-4 mr-2" />
-                  Update Credentials
-                </Button>
+               <Button
+  className="bg-gray-900 hover:bg-gray-800 text-white"
+  disabled={isSuperAdmin}
+  onClick={() => setIsCredentialDialogOpen(true)}
+>
+  <Key className="w-4 h-4 mr-2" />
+  Update Credentials
+</Button>
+
               </DialogTrigger>
               <DialogContent className="max-w-md bg-gray-900">
                 <DialogHeader>
@@ -336,11 +500,11 @@ export default function StaffDetailPage() {
                   
                   <div className="space-y-2">
                     <Label htmlFor="cred-email">Email Address</Label>
-                    <Input
+                  <Input
                       id="cred-email"
                       type="email"
-                      value={credentialForm.email}
-                      onChange={(e) => setCredentialForm({...credentialForm, email: e.target.value})}
+                      value={credentialForm.email || ""}
+                      disabled
                     />
                   </div>
                   
@@ -401,7 +565,7 @@ export default function StaffDetailPage() {
               <CardContent className="p-6">
                 <div className="flex flex-col items-center text-center">
                   <Avatar className="h-32 w-32 mb-4">
-                    <AvatarImage src={staff.avatar} />
+                    
                     <AvatarFallback className="text-2xl">
                       {staff.full_name.split(' ').map(n => n[0]).join('')}
                     </AvatarFallback>
@@ -410,7 +574,7 @@ export default function StaffDetailPage() {
                   <h2 className="text-xl font-bold">{staff.full_name}</h2>
                   <div className="flex items-center gap-2 mt-2">
                     {getRoleBadge(staff.role)}
-                    {getStatusBadge(staff.status)}
+                    {/* {getStatusBadge(staff.status)} */}
                   </div>
                   
                   <div className="mt-6 space-y-4 w-full">
@@ -512,7 +676,7 @@ export default function StaffDetailPage() {
                     
                     <div>
                       <Label className="text-sm text-gray-500">Username</Label>
-                      <p className="font-medium font-mono">{staff.username}</p>
+                      <p className="font-medium text-gray-900 font-mono">{staff.username || 'Not set'}</p>
                     </div>
                   </div>
                   
@@ -532,10 +696,10 @@ export default function StaffDetailPage() {
                       <div className="mt-1">{getRoleBadge(staff.role)}</div>
                     </div>
                     
-                    <div>
+                    {/* <div>
                       <Label className="text-sm text-gray-500">Account Status</Label>
                       <div className="mt-1">{getStatusBadge(staff.status)}</div>
-                    </div>
+                    </div> */}
                   </div>
                 </div>
               </CardContent>
@@ -555,7 +719,7 @@ export default function StaffDetailPage() {
                     <h4 className="font-medium mb-3">Assigned Permissions</h4>
                     <div className="flex flex-wrap gap-2">
                       {roles
-                        .find(r => r.name === staff.role)
+                        .find(r => r.role_name === staff.role)
                         ?.permissions.map((permission, index) => (
                           <Badge key={index} variant="outline" className="bg-white text-gray-900">
                             {permission.replace('_', ' ')}
@@ -581,25 +745,33 @@ export default function StaffDetailPage() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Button
-                    variant="secondary"
-                    className="h-auto py-4 flex flex-col items-center justify-center"
-                    onClick={() => setIsEditDialogOpen(true)}
-                  >
-                    <Pencil className="w-6 h-6 mb-2" />
-                    <span>Edit Details</span>
-                    <span className="text-xs text-gray-500 mt-1">Update personal information</span>
-                  </Button>
+                 <Button
+  variant="secondary"
+  disabled={isSuperAdmin}
+  onClick={() => setIsEditDialogOpen(true)}
+  className="h-auto py-4 flex flex-col items-center justify-center"
+>
+  <Pencil className="w-6 h-6 mb-2" />
+  <span>Edit Details</span>
+  {isSuperAdmin && (
+    <span className="text-xs text-red-500 mt-1">Restricted</span>
+  )}
+</Button>
+
                   
-                  <Button
-                    variant="secondary"
-                    className="h-auto py-4 flex flex-col items-center justify-center"
-                    onClick={() => setIsCredentialDialogOpen(true)}
-                  >
-                    <Key className="w-6 h-6 mb-2" />
-                    <span>Update Credentials</span>
-                    <span className="text-xs text-gray-500 mt-1">Change email or password</span>
-                  </Button>
+                 <Button
+  variant="secondary"
+  disabled={isSuperAdmin}
+  onClick={() => setIsCredentialDialogOpen(true)}
+  className="h-auto py-4 flex flex-col items-center justify-center"
+>
+  <Key className="w-6 h-6 mb-2" />
+  <span>Update Credentials</span>
+  {isSuperAdmin && (
+    <span className="text-xs text-red-500 mt-1">Restricted</span>
+  )}
+</Button>
+
                 </div>
               </CardContent>
             </Card>

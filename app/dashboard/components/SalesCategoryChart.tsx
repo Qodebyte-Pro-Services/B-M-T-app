@@ -10,52 +10,185 @@ import { format } from 'date-fns';
 import {InstallmentPayment, InstallmentPlan, Transaction } from '@/app/utils/type';
 import Link from 'next/link';
 
+type DueInstallment = {
+  plan_id: string;
+  order_id: string;
+  customer: {
+    id: string;
+    name: string;
+    email: string;
+    phone: string;
+  };
+  payment_details: {
+    payment_number: number;
+    total_payments: number;
+    amount_due: number;
+    due_date: string;
+    days_until_due: number;
+    is_overdue: boolean;
+  };
+  plan_details: {
+    status: string;
+    status_label: string;
+    status_color: string;
+    priority: number;
+  };
+};
+
+type CreditTerms = {
+  balance_due: number;
+};
+
+type InstallmentTerms = {
+  number_of_payments: number;
+};
+
+
+type CreditTransaction =
+  | {
+      order_id: string;
+      order_date: string;
+      customer: {
+        name: string;
+        phone: string;
+      };
+      payment_method: 'credit';
+      order_summary: {
+        total_amount: number;
+      };
+      payment_terms: CreditTerms;
+    }
+  | {
+      order_id: string;
+      order_date: string;
+      customer: {
+        name: string;
+        phone: string;
+      };
+      payment_method: 'installment';
+      order_summary: {
+        total_amount: number;
+      };
+      payment_terms: InstallmentTerms;
+    };
+
+
 
 
 
 export function CreditInstallmentOverview() {
-  const [dueInstallments, setDueInstallments] = useState<InstallmentPlan[]>([]);
-  const [recentCreditTransactions, setRecentCreditTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
 
+  const API_BASE =
+  process.env.NEXT_PUBLIC_API_BASE_URL || 'https://primelabs.maskiadmin-management.com/api';
 
+const getToken = () =>
+  typeof window !== 'undefined'
+    ? localStorage.getItem('adminToken')
+    : null;
+const [dueInstallments, setDueInstallments] = useState<DueInstallment[]>([]);
+const [recentCreditTransactions, setRecentCreditTransactions] = useState<CreditTransaction[]>([]);
+const [loading, setLoading] = useState(true);
 
-const loadData = () => {
-  try {
-    const savedPlans = localStorage.getItem('installment_plans');
-    const plans: InstallmentPlan[] = savedPlans ? JSON.parse(savedPlans) : [];
-    
-    const activePlans = plans.filter(plan => plan.status === 'active');
-    const duePlans = activePlans.filter(plan => 
-      plan.payments.some(payment => 
-        (payment.status === 'pending' || payment.status === 'overdue') && 
-        new Date(payment.dueDate) <= new Date()
-      )
-    );
-    
-    setDueInstallments(duePlans.slice(0, 3)); 
+  const fetchDueInstallments = async () => {
+  const token = getToken();
+  if (!token) return [];
 
-    const savedTransactions = localStorage.getItem('pos_transactions');
-    const transactions: Transaction[] = savedTransactions ? JSON.parse(savedTransactions) : [];
-    
-    const creditTransactions = transactions
-      .filter(tx => tx.paymentMethod === 'credit' || tx.paymentMethod === 'installment')
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-      .slice(0, 3);
-    
-    setRecentCreditTransactions(creditTransactions);
-  } catch (error) {
-    console.error('Error loading data:', error);
-    setRecentCreditTransactions([]);
-    setDueInstallments([]);
-  } finally {
-    setLoading(false);
-  }
+  const res = await fetch(
+    `${API_BASE}/analytics/due-installments?limit=3&filter=all`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+
+  if (!res.ok) throw new Error('Failed to fetch due installments');
+
+  const data = await res.json();
+  return data.due_installments;
 };
 
-  useEffect(() => {
-    loadData();
-  }, []);
+const fetchCreditSales = async () => {
+  const token = getToken();
+  if (!token) return [];
+
+  const res = await fetch(
+    `${API_BASE}/analytics/credit-installment-sales?limit=3&method=both&period=all`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+
+  if (!res.ok) throw new Error('Failed to fetch credit sales');
+
+  const data = await res.json();
+  return data.sales;
+};
+
+
+
+
+useEffect(() => {
+  const loadData = async () => {
+    try {
+      setLoading(true);
+
+      const [due, sales] = await Promise.all([
+        fetchDueInstallments(),
+        fetchCreditSales(),
+      ]);
+
+      setDueInstallments(due);
+      setRecentCreditTransactions(sales);
+
+    } catch (err) {
+      console.error(err);
+      setDueInstallments([]);
+      setRecentCreditTransactions([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  loadData();
+}, []);
+
+
+
+// const loadData = () => {
+//   try {
+//     const savedPlans = localStorage.getItem('installment_plans');
+//     const plans: InstallmentPlan[] = savedPlans ? JSON.parse(savedPlans) : [];
+    
+//     const activePlans = plans.filter(plan => plan.status === 'active');
+//     const duePlans = activePlans.filter(plan => 
+//       plan.payments.some(payment => 
+//         (payment.status === 'pending' || payment.status === 'overdue') && 
+//         new Date(payment.dueDate) <= new Date()
+//       )
+//     );
+    
+//     setDueInstallments(duePlans.slice(0, 3)); 
+
+//     const savedTransactions = localStorage.getItem('pos_transactions');
+//     const transactions: Transaction[] = savedTransactions ? JSON.parse(savedTransactions) : [];
+    
+//     const creditTransactions = transactions
+//       .filter(tx => tx.paymentMethod === 'credit' || tx.paymentMethod === 'installment')
+//       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+//       .slice(0, 3);
+    
+//     setRecentCreditTransactions(creditTransactions);
+//   } catch (error) {
+//     console.error('Error loading data:', error);
+//     setRecentCreditTransactions([]);
+//     setDueInstallments([]);
+//   } finally {
+//     setLoading(false);
+//   }
+// };
+
+//   useEffect(() => {
+//     loadData();
+//   }, []);
 
   const getStatusBadge = (status: InstallmentPayment['status']) => {
     switch (status) {
@@ -92,20 +225,15 @@ const loadData = () => {
     }
   };
 
-const getNextDueDate = (plan: InstallmentPlan): string => {
-  const pendingPayment = plan.payments.find(p => p.status === 'pending');
-  const overduePayment = plan.payments.find(p => p.status === 'overdue');
-  
-  if (overduePayment) return overduePayment.dueDate;
-  if (pendingPayment) return pendingPayment.dueDate;
-  return plan.payments[plan.payments.length - 1]?.dueDate || '';
+
+const getDueAmount = (due: DueInstallment) => {
+  return due.payment_details.amount_due;
 };
 
-const getTotalDueAmount = (plan: InstallmentPlan): number => {
-  return plan.payments
-    .filter(p => p.status === 'pending' || p.status === 'overdue')
-    .reduce((sum, p) => sum + (p.amount || 0), 0);
+const getDueDate = (due: DueInstallment) => {
+  return due.payment_details.due_date;
 };
+
 
   if (loading) {
     return (
@@ -130,36 +258,31 @@ const getTotalDueAmount = (plan: InstallmentPlan): number => {
                 {dueInstallments.length} installment plans with pending payments
               </CardDescription>
             </div>
-            <Badge variant="secondary" className="text-sm bg-yellow-100 text-yellow-800">
-              Total Due: NGN {dueInstallments.reduce((sum, plan) => sum + getTotalDueAmount(plan), 0.00).toLocaleString()}.00
-            </Badge>
+           
           </div>
         </CardHeader>
         <CardContent>
           {dueInstallments.length > 0 ? (
             <div   className='grid grid-cols-1 gap-4'>
-              {dueInstallments.map((plan) => {
-                const nextDueDate = getNextDueDate(plan);
-                const totalDue = getTotalDueAmount(plan);
-                const pendingPayments = plan.payments.filter(p => p.status === 'pending').length;
-                const overduePayments = plan.payments.filter(p => p.status === 'overdue').length;
+              {dueInstallments.map((plan, index) => {
+                const { payment_details, customer, } = plan;
 
                 return (
-                 <div key={plan.id} className="p-4 bg-gray-200 rounded-lg border border-gray-100 hover:bg-gray-300 transition-colors">
+                 <div key={`${plan.plan_id}-${index}`} className="p-4 bg-gray-200 rounded-lg border border-gray-100 hover:bg-gray-300 transition-colors">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div className="flex-1">
                     <div className="flex items-center gap-3 mb-2">
                       <Avatar className="h-10 w-10">
                         <AvatarFallback className="bg-blue-100 text-blue-600">
-                          {plan.customer?.name?.charAt(0) || 'C'}
+                          {customer.name.charAt(0) || 'C'}
                         </AvatarFallback>
                       </Avatar>
                       <div>
-                        <p className="font-medium">{plan.customer?.name || 'Unknown'}</p>
+                        <p className="font-medium">{customer.name || 'Unknown'}</p>
                         <div className="flex items-center gap-2 mt-1">
                           <User className="w-3 h-3 text-gray-500" />
                           <span className="text-sm text-gray-600">
-                            {plan.customer?.phone || 'No phone'}
+                            {customer.phone || 'No phone'}
                           </span>
                         </div>
                       </div>
@@ -168,30 +291,26 @@ const getTotalDueAmount = (plan: InstallmentPlan): number => {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
                         <div className="flex items-center gap-2">
                           <CalendarIcon className="w-4 h-4 text-gray-500" />
-                          <span className="text-sm">
-                            Next due: {format(new Date(nextDueDate), 'MMM dd')}
-                          </span>
+                        <span className="text-sm">
+                Due: {format(new Date(payment_details.due_date), 'MMM dd')}
+              </span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">
-                            NGN {totalDue.toLocaleString()}.00
-                          </span>
+                          <div className="text-sm font-medium">
+              NGN {payment_details.amount_due.toLocaleString()}.00
+            </div>
                         </div>
                       </div>
                     </div>
                       
                       <div className="flex flex-col items-end gap-2">
                     <div className="flex gap-2">
-                      {overduePayments > 0 && (
-                        <Badge className="bg-red-100 text-red-800">
-                          {overduePayments} overdue
-                        </Badge>
-                      )}
-                      {pendingPayments > 0 && (
-                        <Badge className="bg-yellow-100 text-yellow-800">
-                          {pendingPayments} pending
-                        </Badge>
-                      )}
+                     {payment_details.is_overdue && (
+            <Badge className="bg-red-100 text-red-800">Overdue</Badge>
+          )}
+          {!payment_details.is_overdue && (
+            <Badge className="bg-yellow-100 text-yellow-800">Pending</Badge>
+          )}
                     </div>
                   </div>
                 </div>
@@ -237,13 +356,13 @@ const getTotalDueAmount = (plan: InstallmentPlan): number => {
         <CardContent>
           {recentCreditTransactions.length > 0 ? (
             <div className="space-y-4">
-              {recentCreditTransactions.map((transaction) => (
-                <div key={transaction.id} className="p-4 bg-gray-200 rounded-lg border border-gray-100 hover:bg-gray-300 transition-colors">
+              {recentCreditTransactions.map((transaction, index) => (
+                <div key={`${transaction.order_id}-${index}`} className="p-4 bg-gray-200 rounded-lg border border-gray-100 hover:bg-gray-300 transition-colors">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
-                        <div className={`h-10 w-10 rounded-full flex items-center justify-center ${getPaymentMethodColor(transaction.paymentMethod)}`}>
-                          {getPaymentMethodIcon(transaction.paymentMethod)}
+                        <div className={`h-10 w-10 rounded-full flex items-center justify-center ${getPaymentMethodColor(transaction.payment_method)}`}>
+                          {getPaymentMethodIcon(transaction.payment_method)}
                         </div>
                         <div>
                           <p className="font-medium">
@@ -252,7 +371,7 @@ const getTotalDueAmount = (plan: InstallmentPlan): number => {
                           <div className="flex items-center gap-2 mt-1">
                             <Clock className="w-3 h-3 text-gray-500" />
                             <span className="text-sm text-gray-600">
-                              {format(new Date(transaction.timestamp), 'MMM dd, HH:mm')}
+                              {format(new Date(transaction.order_date), 'MMM dd, HH:mm')}
                             </span>
                           </div>
                         </div>
@@ -262,13 +381,13 @@ const getTotalDueAmount = (plan: InstallmentPlan): number => {
                         <div className="flex items-center gap-2">
                           <span className="text-sm text-gray-600">Transaction:</span>
                           <code className="text-xs bg-gray-900 text-gray-100 px-2 py-1 rounded">
-                            {transaction.id}
+                            {transaction.order_id}
                           </code>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-sm text-gray-600">Type:</span>
                           <Badge variant="secondary" className="text-xs capitalize">
-                            {transaction.paymentMethod}
+                            {transaction.payment_method}
                           </Badge>
                         </div>
                       </div>
@@ -277,35 +396,32 @@ const getTotalDueAmount = (plan: InstallmentPlan): number => {
                     <div className="flex flex-col items-end">
                       <div className="text-right">
                         <p className="text-2xl font-bold text-gray-900">
-                          NGN {transaction.total.toLocaleString()}
+                          NGN {transaction.order_summary.total_amount.toLocaleString()}
                         </p>
                         <p className="text-sm text-gray-600">
-                          {transaction.credit 
-                            ? `Balance: NGN ${transaction.credit.creditBalance.toLocaleString()}`
-                            : transaction.installmentPlan
-                            ? `Installment: ${transaction.installmentPlan.numberOfPayments} payments`
-                            : 'Full credit'
-                          }
+                          {transaction.payment_method === 'credit'
+            ? `Balance: NGN ${transaction.payment_terms?.balance_due?.toLocaleString()}`
+            : `Installment: ${transaction.payment_terms?.number_of_payments} payments`}
                         </p>
                       </div>
                       
                    <div className="flex gap-2 mt-3">
-                      {transaction.paymentMethod === 'installment' && (
+                      {transaction.payment_method === 'installment' && (
                           <div className="grid-cols-2 grid gap-2">
-                            <Link href={`/sales/installment-page?planId=${transaction.id}`}>
+                            <Link href={`/sales/installment-page?planId=${transaction.order_id}`}>
                               <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white">
                                 View Plans
                               </Button>
                             </Link>
-                            <Link href={`/sales?tab=transactions&filter=installment&txId=${transaction.id}&startDate=${new Date(transaction.timestamp).toISOString().split('T')[0]}&endDate=${new Date(transaction.timestamp).toISOString().split('T')[0]}`}>
+                            <Link href={`/sales?tab=transactions&filter=installment&txId=${transaction.order_id}&startDate=${new Date(transaction.order_date).toISOString().split('T')[0]}&endDate=${new Date(transaction.order_date).toISOString().split('T')[0]}`}>
                               <Button size="sm" className="bg-gray-900 hover:bg-gray-800 text-white">
                                 View Sale
                               </Button>
                             </Link>
                           </div>
                         )}
-                        {transaction.paymentMethod === 'credit' && (
-                          <Link href={`/sales?tab=transactions&filter=credit&txId=${transaction.id}&startDate=${new Date(transaction.timestamp).toISOString().split('T')[0]}&endDate=${new Date(transaction.timestamp).toISOString().split('T')[0]}`}>
+                        {transaction.payment_method === 'credit' && (
+                          <Link href={`/sales?tab=transactions&filter=credit&txId=${transaction.order_id}&start_date=${new Date(transaction.order_date).toISOString().split('T')[0]}&end_date=${new Date(transaction.order_date).toISOString().split('T')[0]}`}>
                             <Button size="sm" className="bg-gray-900 hover:bg-gray-800 text-white">
                               View Sales
                             </Button>

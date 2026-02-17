@@ -17,11 +17,11 @@ export function POSHeader() {
           <div className="relative">
           <Link href="/dashboard" className="flex items-center gap-3">
           <div className="h-8 w-8 bg-green-400 rounded-lg flex items-center justify-center">
-            <span className="text-black font-bold text-sm">BMT</span>
+            <span className="text-black font-bold text-sm">PL</span>
           </div>
           <div>
-            <div className="font-bold text-gray-900 text-lg">Big Men</div>
-            <div className="text-xs text-gray-800 -mt-1">Transaction Apparel</div>
+            <div className="font-bold text-gray-900 text-lg">Prime</div>
+            <div className="text-xs text-gray-800 -mt-1">Labs</div>
           </div>
         </Link>
           </div>
@@ -29,7 +29,7 @@ export function POSHeader() {
       </div>
       
       
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
+      {/* <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
         <div className="bg-gray-50 p-3 rounded-lg">
           <div className="text-sm text-gray-500">Today&apos;s Sales</div>
           <div className="text-xl font-bold">NGN 24,850</div>
@@ -42,7 +42,7 @@ export function POSHeader() {
           <div className="text-sm text-gray-500">Items Sold</div>
           <div className="text-xl font-bold">156</div>
         </div>
-      </div>
+      </div> */}
     </div>
   );
 }

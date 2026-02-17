@@ -8,8 +8,10 @@ import { Button } from '@/components/ui/button';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { AuthForm } from '@/app/components/AuthForm';
-import { mockVerifyOtp as verifyOtp } from "@/app/mock/auth";
+import { verifyOtp, verifyApprovedLoginOtp, resendOtp  } from "@/app/mock/auth";
 import { toast } from 'sonner';
+import { AdminDetail } from '@/app/utils/type';
+import { getFirstAllowedPage } from '@/app/utils/getFirstAllowedPage';
 
 const otpSchema = z.object({
   otp: z.string().length(6, 'OTP must be 6 digits'),
@@ -19,7 +21,7 @@ export default function VerifyOtpForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const admin_id = searchParams.get('admin_id') || '';
-  const purpose = searchParams.get('purpose') || '';
+  const purpose = (searchParams.get('purpose') || '') as 'register' | 'login_approved' | 'login' | 'reset_password';
   const email = searchParams.get('email') || '';
   const [loading, setLoading] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
@@ -30,27 +32,125 @@ export default function VerifyOtpForm() {
   });
 
   async function onSubmit(values: z.infer<typeof otpSchema>) {
-    setLoading(true);
-    try {
-      const { token } = await verifyOtp({ admin_id, otp: values.otp, purpose });
-      localStorage.setItem('adminToken', token);
-      router.push('/dashboard');
-    } catch (err) {
-      console.error('OTP verification error:', err);
+  setLoading(true);
+  try {
+    let response;
+
+    if (purpose === 'login_approved') {
+      const login_attempt_id = searchParams.get('attempt_id') || '';
+      response = await verifyApprovedLoginOtp({
+        admin_id,
+        otp: values.otp,
+        login_attempt_id,
+      });
+    } else {
+      response = await verifyOtp({
+        admin_id,
+        otp: values.otp,
+        purpose,
+      });
     }
+
+    const token = response.token;
+    if (!token) throw new Error('No token received from server');
+
+    localStorage.setItem('adminToken', token);
+
+  
+    const adminDetailStr = localStorage.getItem('adminDetail');
+    let adminDetail: AdminDetail | null = adminDetailStr
+      ? JSON.parse(adminDetailStr)
+      : null;
+
+    if (!adminDetail) {
+      const payload = token.split('.')[1];
+      const padded = payload + '='.repeat((4 - (payload.length % 4)) % 4);
+      adminDetail = JSON.parse(atob(padded));
+      localStorage.setItem('adminDetail', JSON.stringify(adminDetail));
+    }
+
+    toast.success('Verification successful! Redirecting...');
+
+    if (purpose === 'reset_password') {
+      router.push(`/auth/reset-password?admin_id=${admin_id}`);
+      return;
+    }
+
+   
+    if (!adminDetail) {
+      throw new Error('Admin details not found after verification');
+    }
+
+    const allowedPage = getFirstAllowedPage(adminDetail);
+
+    if (!allowedPage) {
+    
+      localStorage.removeItem('adminToken');
+      localStorage.removeItem('adminDetail');
+      toast.error('You do not have permission to access any pages. Please contact admin.');
+      router.push('/auth/login');
+      return;
+    }
+
+    router.push(allowedPage);
+
+  } catch (err: unknown) {
+    let message = 'Invalid or expired OTP';
+    let fieldError: 'otp' | null = null;
+
+    if (err instanceof Error) {
+      message = err.message;
+      if (message.toLowerCase().includes('otp') || 
+          message.toLowerCase().includes('invalid') || 
+          message.toLowerCase().includes('expired')) {
+        fieldError = 'otp';
+      }
+    }
+
+    if (fieldError) {
+      form.setError(fieldError, { type: 'server', message });
+    }
+
+    toast.error(message);
+    console.error('OTP verification error:', err);
+  } finally {
     setLoading(false);
   }
+}
+
 
   async function handleResend() {
     setResendLoading(true);
+
     try {
-      // await resendOtp(email, purpose);
-      toast.success('OTP resent! Check your email.');
-    } catch (err) {
+      const login_attempt_id =
+        purpose === 'login_approved'
+          ? searchParams.get('attempt_id') || undefined
+          : undefined;
+
+      await resendOtp({
+        email,
+        purpose,
+        login_attempt_id,
+      });
+
+    
+      form.clearErrors('otp');
+      form.resetField('otp');
+      
+      toast.success('OTP resent successfully! Check your email.');
+    } catch (err: unknown) {
+      let message = 'Failed to resend OTP';
+
+      if (err instanceof Error) {
+        message = err.message;
+      }
+
+      toast.error(message);
       console.error('Resend OTP error:', err);
-      toast.error('Failed to resend OTP.');
+    } finally {
+      setResendLoading(false);
     }
-    setResendLoading(false);
   }
 
   return (
@@ -63,7 +163,7 @@ export default function VerifyOtpForm() {
           <FormField 
             control={form.control} 
             name="otp" 
-            render={({ field }) => (
+            render={({ field, fieldState }) => (
               <FormItem>
                 <FormLabel className="text-white text-sm font-medium tracking-wide">Verification Code</FormLabel>
                 <FormControl>
@@ -73,12 +173,18 @@ export default function VerifyOtpForm() {
                     </svg>
                     <Input 
                       placeholder="123456" 
-                      className="bg-gray-900/50 border-gray-700 text-white pl-10 h-11 rounded-lg focus:border-green-400 focus:ring-green-400/20 text-center tracking-widest text-lg"
+                      className={`bg-gray-900/50 border-gray-700 text-white pl-10 h-11 rounded-lg focus:border-green-400 focus:ring-green-400/20 text-center tracking-widest text-lg transition-colors ${
+                        fieldState.error ? 'border-red-500 focus:border-red-500 focus:ring-red-400/20' : ''
+                      }`}
                       maxLength={6}
                       {...field} 
                       onChange={(e) => {
                         const value = e.target.value.replace(/\D/g, '').slice(0, 6);
                         field.onChange(value);
+                      
+                        if (fieldState.error) {
+                          form.clearErrors('otp');
+                        }
                       }}
                     />
                   </div>

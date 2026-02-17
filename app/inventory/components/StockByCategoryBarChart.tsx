@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import {
   BarChart,
   Bar,
@@ -9,20 +10,17 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from "recharts";
+import { Loader } from 'lucide-react';
 
 interface CategoryStock {
   category: string;
   stock: number;
 }
 
-const CATEGORY_STOCK_DATA: CategoryStock[] = [
-  { category: "Suits & Blazers", stock: 320 },
-  { category: "Shirts", stock: 280 },
-  { category: "Trousers", stock: 210 },
-  { category: "Accessories", stock: 145 },
-  { category: "Shoes", stock: 98 },
-];
-
+interface ApiCategoryStockItem {
+  category: string;
+  stock: number;
+}
 
 interface TooltipProps {
   active?: boolean;
@@ -46,14 +44,110 @@ const CustomTooltip = ({ active, payload }: TooltipProps) => {
   return null;
 };
 
-export function StockByCategoryBarChart() {
+interface StockByCategoryBarChartProps {
+  filter: string;
+}
+
+export function StockByCategoryBarChart({ filter }: StockByCategoryBarChartProps) {
+  const [data, setData] = useState<CategoryStock[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+    const [customRange, setCustomRange] = useState<{
+  startDate: string;
+  endDate: string;
+} | null>(null);
+
+  useEffect(() => {
+    const fetchStockByCategory = async () => {
+        if (filter === 'custom' && !customRange) return;
+      setLoading(true);
+      setError(null);
+
+      try {
+        const token = localStorage.getItem('adminToken');
+        if (!token) {
+          throw new Error('No authentication token found');
+        }
+
+        const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://primelabs.maskiadmin-management.com/api';
+        let url = `${apiUrl}/analytics/stock-by-category?filter=${filter}`;
+        if (filter === 'custom' && customRange) {
+          url += `&start_date=${customRange.startDate}&end_date=${customRange.endDate}`;
+        }
+        const response = await fetch(url, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch stock by category');
+        }
+
+        const result = await response.json();
+
+      
+        const transformedData: CategoryStock[] = result.category_stock.map(
+          (item: ApiCategoryStockItem) => ({
+            category: item.category,
+            stock: item.stock,
+          })
+        );
+
+        setData(transformedData);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unknown error occurred');
+        setData([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchStockByCategory();
+  }, [filter]);
+
+  if (loading) {
+    return (
+      <div className="w-full h-80 sm:h-90 md:h-100 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-2">
+          <Loader className="h-6 w-6 animate-spin text-blue-500" />
+          <span className="text-gray-600">Loading stock data...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="w-full h-80 sm:h-90 md:h-100 flex items-center justify-center">
+        <div className="text-red-600 text-center">
+          <p className="font-medium">Error loading stock data</p>
+          <p className="text-sm">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (data.length === 0) {
+    return (
+      <div className="w-full h-80 sm:h-90 md:h-100 flex items-center justify-center">
+        <div className="text-gray-600 text-center">
+          <p>No stock data available</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full h-80 sm:h-90 md:h-100">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart
-          data={CATEGORY_STOCK_DATA}
+          data={data}
           layout="vertical"
-          margin={{ top: 10, right: 30, left: 40, bottom: 10 }}
+          margin={{ top: 10, right: 30, left: 120, bottom: 10 }}
         >
           <CartesianGrid
             strokeDasharray="3 3"
@@ -74,7 +168,7 @@ export function StockByCategoryBarChart() {
             dataKey="category"
             stroke="#6b7280"
             fontSize={12}
-            width={120}
+            width={110}
           />
 
           <Tooltip content={<CustomTooltip />} />

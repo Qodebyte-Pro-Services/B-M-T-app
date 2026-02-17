@@ -9,8 +9,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'Big Men Transaction - Admin Portal',
-  description: 'Executive admin dashboard for Big Men Transaction Apparel',
+  title: 'Prime Labs - Admin Portal',
+  description: 'Executive admin dashboard for Prime Labs Apparel',
 };
 
 export default function RootLayout({

@@ -1,7 +1,7 @@
 "use client"
 import { useState, useEffect } from 'react';
 import ReactDOMServer from 'react-dom/server';
-import { Customer, Transaction } from '@/app/utils/type';
+import {  Transaction } from '@/app/utils/type';
 import { Receipt } from '@/app/pos/components/Receipt';
 import {
   Dialog,
@@ -15,21 +15,35 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Pencil } from 'lucide-react';
+import { ArrowLeft, Pencil } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter, useParams } from 'next/navigation';
+import { InventoryLayout } from '@/app/inventory/components/InventoryLayout';
+import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { toast } from 'sonner';
 
-interface PageProps {
-  customerId: string;
+
+
+interface Customer {
+  id: string;
+  name: string;
+  email?: string | null;
+  phone?: string | null;
+  is_walk_in: boolean;
+  created_at: string;
+  updated_at: string;
+  is_deleted?: boolean;
 }
 
-const allCustomers: Customer[] = [
-  { id: 'walk-in', name: 'Walk-in Customer' },
-  { id: 'cust-1', name: 'John Doe', email: 'john@example.com', phone: '+1234567890' },
-  { id: 'cust-2', name: 'Jane Smith', email: 'jane@example.com', phone: '+0987654321' },
-  { id: 'cust-3', name: 'Robert Johnson', email: 'robert@example.com', phone: '+1122334455' },
-];
+export function CustomerDetailPage() {
+   const router = useRouter();
+ const { id } = useParams<{ id: string }>();
 
-export function CustomerDetailPage({ customerId }: PageProps) {
+
+  const apiUrl =
+    process.env.NEXT_PUBLIC_API_BASE_URL ||
+    'https://primelabs.maskiadmin-management.com/api';
+
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [filterOwing, setFilterOwing] = useState(false);
@@ -42,28 +56,65 @@ export function CustomerDetailPage({ customerId }: PageProps) {
     email: '',
     phone: '',
   });
+  const [loading, setLoading] = useState(true);
+  const [showDeletedDialog, setShowDeletedDialog] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+const [isDeleting, setIsDeleting] = useState(false);
 
   const ITEMS_PER_PAGE = 10;
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setIsLoading(true);
-    const found = allCustomers.find(c => c.id === customerId) ?? null;
-    setCustomer(found);
-    
-    if (found) {
-      setEditForm({
-        name: found.name,
-        email: found.email || '',
-        phone: found.phone || '',
-      });
-    }
+   useEffect(() => {
+    const fetchCustomer = async () => {
+      try {
+        setLoading(true);
+        const token = localStorage.getItem('adminToken');
 
-    const allTxns: Transaction[] = JSON.parse(localStorage.getItem('pos_transactions') || '[]');
-    const customerTxns = allTxns.filter(txn => txn.customer?.id === customerId);
-    setTransactions(customerTxns);
-    setIsLoading(false);
-  }, [customerId]);
+        const res = await fetch(
+          `${apiUrl}/customers/${id}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        if (res.status === 404) {
+       
+          setShowDeletedDialog(true);
+          return;
+        }
+
+        if (!res.ok) {
+          throw new Error('Failed to fetch customer');
+        }
+
+        const data = await res.json();
+        if (data.customer) {
+          setCustomer(data.customer);
+          setEditForm({
+  name: data.customer.name || '',
+  email: data.customer.email || '',
+  phone: data.customer.phone || '',
+});
+
+        }
+      } catch (error) {
+        console.error('❌ Fetch customer error:', error);
+        setShowDeletedDialog(true);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (id) {
+      fetchCustomer();
+    }
+  }, [id, apiUrl]);
+
+
+ 
+
+    const handleRedirectBack = () => {
+    router.push('/customers');
+  };
 
  
   const handlePrintReceipt = (transaction: Transaction) => {
@@ -194,31 +245,50 @@ export function CustomerDetailPage({ customerId }: PageProps) {
   };
 
  
-  const handleUpdateCustomer = () => {
-    if (!customer) return;
-    
-  
-    const updatedCustomers = allCustomers.map(c => 
-      c.id === customer.id 
-        ? { ...c, ...editForm, email: editForm.email || undefined, phone: editForm.phone || undefined }
-        : c
-    );
-    
-   
-    const updatedCustomer = updatedCustomers.find(c => c.id === customer.id);
-    setCustomer(updatedCustomer || null);
-    
-  
-    const allTxns: Transaction[] = JSON.parse(localStorage.getItem('pos_transactions') || '[]');
-    const updatedTxns = allTxns.map(txn => 
-      txn.customer?.id === customer.id
-        ? { ...txn, customer: { ...txn.customer, ...editForm } }
-        : txn
-    );
-    localStorage.setItem('pos_transactions', JSON.stringify(updatedTxns));
-    
+ const handleUpdateCustomer = async () => {
+  try {
+    const token = localStorage.getItem('adminToken');
+
+    await fetch(`${apiUrl}/customers/${customer!.id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(editForm),
+    });
+
+    toast.success('Customer updated successfully');
     setEditDialogOpen(false);
+  } catch (error) {
+    toast.error('Failed to update customer.');
+    console.error('❌ Update customer error:', error);
+  }
+};
+
+
+useEffect(() => {
+  const fetchTransactions = async () => {
+    try {
+      const token = localStorage.getItem('adminToken');
+
+      const res = await fetch(
+        `${apiUrl}/customers/${id}/transactions`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      const data = await res.json();
+      setTransactions(data.transactions || []);
+    } catch (err) {
+      console.error('❌ Fetch transactions error:', err);
+    }
   };
+
+  if (id) fetchTransactions();
+}, [id, apiUrl]);
+
 
   const isTransactionCompleted = (txn: Transaction): boolean => {
     if (txn.paymentMethod === 'credit') {
@@ -268,6 +338,41 @@ export function CustomerDetailPage({ customerId }: PageProps) {
     { value: 'installment', label: 'Installment' },
   ];
 
+  const handleDeleteCustomer = async () => {
+  try {
+    setIsDeleting(true);
+    const token = localStorage.getItem('adminToken');
+
+    const res = await fetch(`${apiUrl}/customers/${customer!.id}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error('Failed to delete customer');
+    }
+
+    toast.success('Customer deleted successfully');
+
+  
+    setDeleteDialogOpen(false);
+
+  
+    setTimeout(() => {
+      router.push('/customers');
+    }, 800);
+
+  } catch (error) {
+    console.error('❌ Delete customer error:', error);
+    toast.error('Failed to delete customer');
+  } finally {
+    setIsDeleting(false);
+  }
+};
+
+
   const stats = {
     totalOrders: transactions.length,
     outstandingCredit: transactions
@@ -309,12 +414,13 @@ export function CustomerDetailPage({ customerId }: PageProps) {
     }
   };
 
-  if (isLoading) {
+if (loading) {
     return (
-      <div className="p-8 text-center">
-        <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
-        <p className="mt-2">Loading customer...</p>
-      </div>
+     
+        <div className="p-6">
+          <div className="text-center py-10">Loading customer...</div>
+        </div>
+      
     );
   }
 
@@ -323,7 +429,7 @@ export function CustomerDetailPage({ customerId }: PageProps) {
       <div className="p-8 text-center">
         <div className="text-red-500 text-2xl mb-2">⚠️</div>
         <h2 className="text-xl font-bold">Customer not found</h2>
-        <p className="text-gray-400 mt-1">Customer ID: {customerId}</p>
+        <p className="text-gray-400 mt-1">Customer ID: {id}</p>
         <p className="text-gray-400">Check the URL or return to the customer list</p>
         <button 
           onClick={() => window.history.back()}
@@ -337,6 +443,14 @@ export function CustomerDetailPage({ customerId }: PageProps) {
 
   return (
     <div className="p-4 space-y-6">
+       <Button
+          variant="outline"
+          onClick={() => router.push('/customers')}
+          className="flex items-center gap-2"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back to Customers
+        </Button>
 
       <div className="bg-gray-900 p-6 rounded-lg">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -419,9 +533,43 @@ export function CustomerDetailPage({ customerId }: PageProps) {
                   </DialogContent>
                 </Dialog>
 
-                <button className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded">
-                  Delete
-                </button>
+              <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+  <AlertDialogTrigger asChild>
+    <button className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded">
+      Delete
+    </button>
+  </AlertDialogTrigger>
+
+  <AlertDialogContent>
+    <AlertDialogHeader>
+      <AlertDialogTitle>Delete Customer</AlertDialogTitle>
+      <AlertDialogDescription>
+        This action will permanently remove this customer from active records.
+        <br />
+        <strong className="text-red-500">This cannot be undone.</strong>
+      </AlertDialogDescription>
+    </AlertDialogHeader>
+
+    <AlertDialogFooter>
+      <Button
+        variant="outline"
+        onClick={() => setDeleteDialogOpen(false)}
+        disabled={isDeleting}
+      >
+        Cancel
+      </Button>
+
+      <Button
+        className="bg-red-600 hover:bg-red-700 text-white"
+        onClick={handleDeleteCustomer}
+        disabled={isDeleting}
+      >
+        {isDeleting ? 'Deleting…' : 'Yes, Delete'}
+      </Button>
+    </AlertDialogFooter>
+  </AlertDialogContent>
+</AlertDialog>
+
               </>
             )}
           </div>
@@ -701,6 +849,21 @@ export function CustomerDetailPage({ customerId }: PageProps) {
           </>
         )}
       </div>
+      <AlertDialog open={showDeletedDialog} onOpenChange={setShowDeletedDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Customer Deleted</AlertDialogTitle>
+            <AlertDialogDescription>
+              This customer has been deleted or no longer exists. You will be redirected back to the customers list.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={handleRedirectBack}>
+              Return to Customers
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

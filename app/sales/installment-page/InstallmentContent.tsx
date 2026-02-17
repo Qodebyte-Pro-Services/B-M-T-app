@@ -1,1175 +1,821 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { useState } from 'react';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { 
-  Calendar, 
-  DollarSign, 
-  CreditCard, 
-  Filter, 
-  Search, 
-  Clock, 
-  AlertCircle,
-  TrendingUp,
-  RefreshCcw
-} from "lucide-react";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { toast } from 'sonner';
+  Eye, 
+  RefreshCw, 
+  AlertCircle, 
+  ChevronDown, 
+  ChevronRight,
+  CreditCard,
+  Calendar,
+  CheckCircle,
+  Clock,
+  Printer,
+  Download,
+  Share2,
+  X,
+  ChevronLast,
+  ChevronFirst
+} from 'lucide-react';
+import Link from 'next/link';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { useInstallmentPlans, InstallmentPlan, InstallmentPayment } from './hooks/useInstallmentPlans';
+import { 
+  calculatePaymentSummary, 
+  formatCurrency, 
+  formatDate, 
+  getStatusColor, 
+  isPaymentOverdue,
+  type PaymentStatusType 
+} from './hooks/utils';
 import { InventoryLayout } from '@/app/inventory/components/InventoryLayout';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-
-interface InstallmentPlan {
-  id: string;
-  customer: {
-    name: string;
-    email?: string;
-    phone?: string;
-  };
-  total: number;
-  downPayment: number;
-  remainingBalance: number;
-  numberOfPayments: number;
-  amountPerPayment: number;
-  paymentFrequency: string;
-  startDate: string;
-payments: Array<{
-  paymentNumber: number;
-  dueDate: string;
-  expectedAmount: number;
-  paidAmount: number;
-  status: 'paid' | 'pending' | 'partial' | 'overdue';
-  type?: 'down_payment' | 'installment'; 
-  paidDate?: string;
-  method?: 'cash' | 'card' | 'transfer';
-}>;
-
-  status: 'active' | 'completed' | 'defaulted';
-};
-
-interface RawInstallmentPlan {
-  id?: string | number;
-  customer?: {
-    name?: string;
-    email?: string;
-    phone?: string;
-  };
-  total?: number | string;
-  downPayment?: number | string;
-  remainingBalance?: number | string;
-  numberOfPayments?: number | string;
-  amountPerPayment?: number | string;
-  paymentFrequency?: string;
-  startDate?: string;
-  status?: string;
-  payments?: Array<{
-    paymentNumber?: number | string;
-    dueDate?: string;
-    expectedAmount?: number | string;
-    paidAmount?: number | string;
-    status?: string;
-    paidDate?: string;
-    method?: string;
-  }>;
-}
-
-import ReactDOMServer from 'react-dom/server';
+import { toast } from 'sonner';
+import { RecordPaymentDialog } from './components/RecordPaymentDialog';
 import { Receipt } from '@/app/pos/components/Receipt';
-import { InstallmentTransaction } from '@/app/utils/type';
-
-
-function printInstallmentReceipt(params: {
-  plan: InstallmentPlan;
-  paymentNumber: number;
-  amountPaid: number;
-  method: 'cash' | 'card' | 'transfer';
-}) {
-  const { plan, paymentNumber, amountPaid, method } = params;
-
-  const receiptHtml = ReactDOMServer.renderToString(
-    <Receipt
-      customer={{
-        name: plan.customer.name,
-        email: plan.customer.email,
-        phone: plan.customer.phone,
-        id: 'customer'
-      }}
-     cart={[
-  {
-    id: `installment-${plan.id}-${paymentNumber}`,
-    productId: plan.id,
-    variantId: `payment-${paymentNumber}`,
-    productName: `Installment Payment #${paymentNumber}`,
-    variantName: plan.paymentFrequency,
-    sku: `INST-${paymentNumber}`,
-    price: amountPaid,
-    quantity: 1,
-    taxable: false,
-    image: '',
-    stock: 0,
-  },
-]}
-      subtotal={amountPaid}
-      tax={0}
-      total={amountPaid}
-      paymentMethod={method}
-      amountPaid={amountPaid}
-      change={0}
-      purchaseType="in-store"
-     installmentPlan={{
-  numberOfPayments: plan.numberOfPayments,
-  amountPerPayment: plan.amountPerPayment,
-  paymentFrequency: plan.paymentFrequency as 'daily' | 'weekly' | 'monthly',
-  startDate: plan.startDate,
-  notes: '',
-  downPayment: plan.downPayment,
-  remainingBalance: plan.remainingBalance - amountPaid,
-}}
-      transactionId={`INST-${plan.id}-${paymentNumber}`}
-      receiptDate={new Date().toLocaleString()}
-    />
-  );
-
-  const win = window.open('', '_blank', 'width=500,height=800');
-  if (!win) return;
-
-  win.document.write(`
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>Installment Receipt - ${plan.id}</title>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-          @media print {
-            @page {
-              size: auto;
-              margin: 0mm;
-            }
-            body {
-              margin: 0;
-              padding: 10px;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            .no-print { display: none !important; }
-          }
-          
-          body {
-            margin: 0;
-            padding: 20px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #111827;
-            color: white;
-            line-height: 1.5;
-          }
-          
-          .print-controls {
-            position: fixed;
-            top: 10px;
-            right: 10px;
-            z-index: 1000;
-            background: white;
-            padding: 10px;
-            border-radius: 5px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            border: 1px solid #ddd;
-          }
-          
-          .print-controls button {
-            background: #111827;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-family: sans-serif;
-            font-size: 14px;
-            margin-right: 10px;
-          }
-          
-          .print-controls button:hover {
-            background: #1f2937;
-          }
-          
-          .print-controls button:last-child {
-            background: #dc2626;
-          }
-          
-          .print-controls button:last-child:hover {
-            background: #b91c1c;
-          }
-          
-          @media print {
-            body {
-              background: white !important;
-              color: black !important;
-            }
-            .bg-green-400 { background-color: #facc15 !important; }
-            .bg-green-900\/20 { background-color: rgba(120, 53, 15, 0.2) !important; }
-            .text-gray-100 { color: #000 !important; }
-            .text-gray-300 { color: #000 !important; }
-            .text-gray-400 { color: #666 !important; }
-            .text-green-400 { color: #92400e !important; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="print-controls no-print">
-          <button onclick="window.print()">🖨️ Print Receipt</button>
-          <button onclick="window.close()">❌ Close</button>
-        </div>
-        ${receiptHtml}
-        
-        <script>
-          // Auto-close after printing
-          window.onafterprint = function() {
-            setTimeout(() => {
-              window.close();
-            }, 1000);
-          };
-          
-          // Keyboard shortcuts
-          document.addEventListener('keydown', function(e) {
-            if (e.ctrlKey && e.key === 'p') {
-              e.preventDefault();
-              window.print();
-            }
-            if (e.key === 'Escape') {
-              window.close();
-            }
-          });
-        </script>
-      </body>
-    </html>
-  `);
-
-  win.document.close();
-  win.focus();
-};
-
-function printInstallmentReceiptFromTransaction(
-  tx: InstallmentTransaction
-) {
-  const receiptHtml = ReactDOMServer.renderToString(
-    <Receipt
-      customer={{
-        id: tx.planId,
-        name: tx.customer.name,
-        email: tx.customer.email,
-        phone: tx.customer.phone,
-      }}
-      cart={[
-        {
-          id: tx.id,
-          productId: tx.planId,
-          variantId: `payment-${tx.paymentNumber}`,
-          productName: `Installment Payment #${tx.paymentNumber}`,
-          variantName: tx.paymentFrequency,
-          sku: tx.id,
-          price: tx.amountPaid,
-          quantity: 1,
-          taxable: false,
-          image: '',
-          stock: 0,
-        },
-      ]}
-      subtotal={tx.amountPaid}
-      tax={0}
-      total={tx.amountPaid}
-      paymentMethod={tx.paymentMethod}
-      amountPaid={tx.amountPaid}
-      change={0}
-      purchaseType="in-store"
-      installmentPlan={{
-        numberOfPayments: tx.numberOfPayments,
-        amountPerPayment: tx.amountPerPayment,
-        paymentFrequency: tx.paymentFrequency,
-        startDate: tx.timestamp,
-        notes: '',
-        downPayment: tx.downPayment,
-        remainingBalance: tx.remainingBalanceAfter,
-      }}
-      transactionId={tx.id}
-      receiptDate={new Date(tx.timestamp).toLocaleString()}
-    />
-  );
-
-    const win = window.open('', '_blank', 'width=500,height=800');
-  if (!win) return;
-
-  win.document.write(`
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <title>Installment Receipt - ${tx.id}</title>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
-          @media print {
-            @page {
-              size: auto;
-              margin: 0mm;
-            }
-            body {
-              margin: 0;
-              padding: 10px;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            .no-print { display: none !important; }
-          }
-          
-          body {
-            margin: 0;
-            padding: 20px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #111827;
-            color: white;
-            line-height: 1.5;
-          }
-          
-          .print-controls {
-            position: fixed;
-            top: 10px;
-            right: 10px;
-            z-index: 1000;
-            background: white;
-            padding: 10px;
-            border-radius: 5px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            border: 1px solid #ddd;
-          }
-          
-          .print-controls button {
-            background: #111827;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-family: sans-serif;
-            font-size: 14px;
-            margin-right: 10px;
-          }
-          
-          .print-controls button:hover {
-            background: #1f2937;
-          }
-          
-          .print-controls button:last-child {
-            background: #dc2626;
-          }
-          
-          .print-controls button:last-child:hover {
-            background: #b91c1c;
-          }
-          
-          @media print {
-            body {
-              background: white !important;
-              color: black !important;
-            }
-            .bg-green-400 { background-color: #facc15 !important; }
-            .bg-green-900\/20 { background-color: rgba(120, 53, 15, 0.2) !important; }
-            .text-gray-100 { color: #000 !important; }
-            .text-gray-300 { color: #000 !important; }
-            .text-gray-400 { color: #666 !important; }
-            .text-green-400 { color: #92400e !important; }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="print-controls no-print">
-          <button onclick="window.print()">🖨️ Print Receipt</button>
-          <button onclick="window.close()">❌ Close</button>
-        </div>
-        ${receiptHtml}
-        
-        <script>
-          // Auto-close after printing
-          window.onafterprint = function() {
-            setTimeout(() => {
-              window.close();
-            }, 1000);
-          };
-          
-          // Keyboard shortcuts
-          document.addEventListener('keydown', function(e) {
-            if (e.ctrlKey && e.key === 'p') {
-              e.preventDefault();
-              window.print();
-            }
-            if (e.key === 'Escape') {
-              window.close();
-            }
-          });
-        </script>
-      </body>
-    </html>
-  `);
-
-  win.document.close();
-  win.focus();
-} 
+import ReactDOMServer from 'react-dom/server';
 
 export default function InstallmentsPage() {
-  const [installments, setInstallments] = useState<InstallmentPlan[]>([]);
-  const searchParams = useSearchParams();
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [dateFilter, setDateFilter] = useState<string>('');
- const [highlightedPlanId, setHighlightedPlanId] = useState<string>('');
+  const { plans, loading, error, refetch, getPlanById } = useInstallmentPlans();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState<string>('all');
+  const [expandedRows, setExpandedRows] = useState<Set<string | number>>(new Set());
+  const [loadingPlanId, setLoadingPlanId] = useState<string | number | null>(null);
+  const [detailedPlans, setDetailedPlans] = useState<Map<string | number, InstallmentPlan>>(new Map());
 
-  const [selectedPlan, setSelectedPlan] = useState<InstallmentPlan | null>(null);
-const [selectedPayment, setSelectedPayment] = useState<number | null>(null);
-const [paymentAmount, setPaymentAmount] = useState('');
-const [paymentMethod, setPaymentMethod] =
-  useState<'cash' | 'card' | 'transfer'>('cash');
+    const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+  const [selectedPayment, setSelectedPayment] = useState<InstallmentPayment | null>(null);
+  const [selectedPlanId, setSelectedPlanId] = useState<string | number | null>(null);
 
-    useEffect(() => {
-    const planId = searchParams.get('planId');
-    if (planId) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setHighlightedPlanId(planId);
-    }
+  // Receipt viewer state
+  const [showReceiptDialog, setShowReceiptDialog] = useState(false);
+  const [receiptPlan, setReceiptPlan] = useState<InstallmentPlan | null>(null);
 
-  
-    const filter = searchParams.get('filter');
-    if (filter === 'overdue') {
-      setStatusFilter('overdue');
-    }
-  }, [searchParams]);
-
-const [expandedPlanId, setExpandedPlanId] = useState<string | null>(null);
-
-const toggleSchedule = (planId: string) => {
-  setExpandedPlanId(prev => (prev === planId ? null : planId));
-};
-
-
-const ITEMS_PER_PAGE = 5;
-
-const [currentPage, setCurrentPage] = useState(1);
-
-function hasLegacyAmount(
-  p: unknown
-): p is { amount: number | string } {
-  return (
-    typeof p === 'object' &&
-    p !== null &&
-    'amount' in p
-  );
-}
-
-
-const loadInstallments = useCallback(() => {
-  try {
-    const stored = localStorage.getItem('installment_plans');
-    if (!stored) {
-      setInstallments([]);
-      return;
-    }
-
-    const parsed: unknown = JSON.parse(stored);
-    if (!Array.isArray(parsed)) {
-      setInstallments([]);
-      return;
-    }
-
-    const normalized: InstallmentPlan[] = parsed.map((plan: RawInstallmentPlan) => ({
-      id: String(plan.id),
-      customer: {
-        name: plan.customer?.name ? String(plan.customer.name) : 'Unknown',
-        email: plan.customer?.email ? String(plan.customer.email) : undefined,
-        phone: plan.customer?.phone ? String(plan.customer.phone) : undefined,
-      },
-      total: Number(plan.total),
-      downPayment: Number(plan.downPayment),
-      remainingBalance:
-        Number(plan.remainingBalance) ||
-        Number(plan.total) - Number(plan.downPayment),
-      numberOfPayments: Number(plan.numberOfPayments),
-      amountPerPayment: Number(plan.amountPerPayment),
-      paymentFrequency: String(plan.paymentFrequency),
-      startDate: String(plan.startDate),
-      status: ['active', 'completed', 'defaulted'].includes(plan.status || '')
-        ? (plan.status as 'active' | 'completed' | 'defaulted')
-        : 'active',
-   payments: Array.isArray(plan.payments)
-  ? plan.payments.map((p) => ({
-      paymentNumber: Number(p.paymentNumber),
-      dueDate: String(p.dueDate),
-    expectedAmount: Number(
-    hasLegacyAmount(p)
-  ? Number(p.amount)
-  : Number(p.expectedAmount ?? plan.amountPerPayment)
-),
-paidAmount: Number(
-  p.paidAmount ??
-  (hasLegacyAmount(p) && p.status === 'paid'
-  ? Number(p.amount)
-  : 0
-)
-),
-      status: ['paid', 'pending', 'partial', 'overdue'].includes(p.status || '')
-        ? (p.status as 'paid' | 'pending' | 'partial' | 'overdue')
-        : 'pending',
-        type:
-        Number(p.paymentNumber) === 1 &&
-        Number(plan.downPayment) > 0
-          ? 'down_payment'
-          : 'installment',
-      paidDate: p.paidDate ? String(p.paidDate) : undefined,
-      method: p.method as 'cash' | 'card' | 'transfer' | undefined,
-    }))
-  : [],
-    }));
-
-    setInstallments(normalized);
-  } catch (err) {
-    console.error('Failed to load installments:', err);
-    setInstallments([]);
-  }
-}, []);
-
-
-  const filteredInstallments = installments.filter(plan => {
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      if (!plan.customer.name.toLowerCase().includes(q) && !plan.id.toLowerCase().includes(q)) {
-        return false;
-      }
-    }
-
+  const toggleRow = async (planId: string | number) => {
+    const newExpanded = new Set(expandedRows);
     
-    if (statusFilter === 'overdue') {
-      const hasOverduePayments = plan.payments.some(p => p.status === 'overdue');
-      const hasOverdueOrPendingPayments = plan.payments.some(payment => 
-        (payment.status === 'pending' || payment.status === 'overdue') && 
-        new Date(payment.dueDate) <= new Date()
-      );
-      
-      if (!hasOverduePayments && !hasOverdueOrPendingPayments) {
-        return false;
+    if (newExpanded.has(planId)) {
+      newExpanded.delete(planId);
+    } else {
+      setLoadingPlanId(planId);
+      try {
+        const detailedPlan = await getPlanById(planId);
+        if (detailedPlan) {
+          setDetailedPlans(prev => new Map(prev).set(planId, detailedPlan));
+          newExpanded.add(planId);
+        } else {
+          toast.error('Failed to load plan details');
+        }
+      } catch (err) {
+        toast.error('Error loading plan details');
+        console.error('Error fetching plan:', err);
+      } finally {
+        setLoadingPlanId(null);
       }
-    } else if (statusFilter !== 'all' && plan.status !== statusFilter) {
-      return false;
     }
-
-    if (dateFilter && plan.startDate < dateFilter) {
-      return false;
-    }
-
-    return true;
-  });
-
-
-useEffect(() => {
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  loadInstallments();
-}, [loadInstallments]);
-
-
-
-
-const formatCurrency = (value?: number | string) =>
-  `NGN ${(Number(value) || 0).toFixed(2)}`;
-
-  const calculateKPIs = () => {
-    const active = installments.filter(p => p.status === 'active');
-    const overdue = active.filter(p => 
-      p.payments.some(payment => 
-        payment.status === 'overdue' || 
-        (payment.status === 'pending' && new Date(payment.dueDate) < new Date())
-      )
-    );
-
-    const totalActiveBalance = active.reduce((sum, plan) => sum + plan.remainingBalance, 0);
-    const totalExpected = active.reduce((sum, plan) => sum + plan.total, 0);
-    const collectionRate = totalExpected > 0 ? ((totalExpected - totalActiveBalance) / totalExpected) * 100 : 0;
-
-    return {
-      activeCount: active.length,
-      overdueCount: overdue.length,
-      totalActiveBalance,
-      totalExpected,
-      collectionRate,
-      totalInstallments: installments.length,
-    };
+    
+    setExpandedRows(newExpanded);
   };
 
-  const kpis = calculateKPIs();
+  const filteredPlans = plans.filter(plan => {
+    const planName = plan.plan_name || '';
+    const customerName = plan.Customer?.name || '';
+    const customerEmail = plan.Customer?.email || '';
 
-const handleRecordPayment = () => {
-  if (!selectedPlan || !selectedPayment) return;
+    const matchesSearch =
+      planName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      customerEmail.toLowerCase().includes(searchTerm.toLowerCase());
 
-  const amount = Number(paymentAmount);
-  if (amount <= 0) {
-    toast.error('Enter a valid amount');
-    return;
+    const matchesStatus =
+      selectedStatus === 'all' || plan.status === selectedStatus;
+
+    return matchesSearch && matchesStatus;
+  });
+
+    const totalPages = Math.ceil(filteredPlans.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedPlans = filteredPlans.slice(startIndex, endIndex);
+
+   const handleSearchChange = (value: string) => {
+    setSearchTerm(value);
+    setCurrentPage(1);
+  };
+
+  const handleStatusChange = (value: string) => {
+    setSelectedStatus(value);
+    setCurrentPage(1);
+  };
+
+
+
+  const getStats = () => {
+    const stats = {
+      total: plans.length,
+      active: plans.filter(p => p.status === 'active').length,
+      completed: plans.filter(p => p.status === 'completed').length,
+      overdue: plans.filter(p => {
+        const summary = calculatePaymentSummary(p);
+        return summary.overduePayments > 0;
+      }).length,
+    };
+    return stats;
+  };
+
+  const stats = getStats();
+
+  const handleRecordPayment = (planId: string | number, paymentId?: string) => {
+    const plan = detailedPlans.get(planId) || plans.find(p => p.id === planId);
+    
+    if (!plan) {
+      toast.error('Plan not found');
+      return;
+    }
+
+    if (paymentId) {
+      const payment = plan.InstallmentPayments?.find(p => p.id === paymentId);
+      if (!payment) {
+        toast.error('Payment not found');
+        return;
+      }
+      setSelectedPayment(payment);
+    }
+    
+    setSelectedPlanId(planId);
+    setShowPaymentDialog(true);
+  };
+
+  const handlePaymentRecorded = async () => {
+    if (selectedPlanId) {
+      try {
+        const detailedPlan = await getPlanById(selectedPlanId);
+        if (detailedPlan) {
+          setDetailedPlans(prev => new Map(prev).set(selectedPlanId, detailedPlan));
+        }
+      } catch (err) {
+        console.error('Error refreshing plan:', err);
+      }
+    }
+    
+    await refetch();
+  };
+
+  const handleViewReceipt = (plan: InstallmentPlan) => {
+    setReceiptPlan(plan);
+    setShowReceiptDialog(true);
+  };
+
+  const handlePrintReceipt = () => {
+    if (!receiptPlan) return;
+
+    const receiptHtml = ReactDOMServer.renderToString(
+      <Receipt
+        customer={receiptPlan.Customer || { id: '', name: 'Unknown', email: '', phone: '' }}
+        cart={[]}
+        subtotal={receiptPlan.total_amount}
+        tax={0}
+        total={receiptPlan.total_amount}
+        paymentMethod="installment"
+        amountPaid={receiptPlan.InstallmentPayments?.find(p => p.status === 'paid')?.amount || 0}
+        change={0}
+        purchaseType="in-store"
+        installmentPlan={{
+          numberOfPayments: receiptPlan.number_of_payments,
+          amountPerPayment: receiptPlan.total_amount / receiptPlan.number_of_payments,
+          paymentFrequency: receiptPlan.payment_interval as 'daily' | 'weekly' | 'monthly',
+          startDate: receiptPlan.start_date,
+          notes: receiptPlan.notes || '',
+          downPayment: receiptPlan.InstallmentPayments?.find(p => p.type === 'down_payment')?.amount || 0,
+          remainingBalance: receiptPlan.remaining_amount,
+        }}
+        transactionId={String(receiptPlan.id)}
+        receiptDate={new Date(receiptPlan.start_date).toLocaleString()}
+      />
+    );
+
+    const printWindow = window.open('', '_blank', 'width=500,height=800');
+    if (!printWindow) return;
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Installment Plan - ${receiptPlan.id}</title>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <style>
+            @media print {
+              @page {
+                size: auto;
+                margin: 0mm;
+              }
+              body {
+                margin: 0;
+                padding: 10px;
+                background: white !important;
+                color: black !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              .no-print { display: none !important; }
+            }
+            
+            body {
+              margin: 0;
+              padding: 0;
+              font-family: 'Courier New', monospace;
+              background: white;
+            }
+            
+            .print-controls {
+              position: fixed;
+              top: 10px;
+              right: 10px;
+              z-index: 1000;
+              background: white;
+              padding: 10px;
+              border-radius: 5px;
+              box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            }
+            
+            .print-controls button {
+              background: #111827;
+              color: white;
+              border: none;
+              padding: 8px 16px;
+              border-radius: 4px;
+              cursor: pointer;
+              font-family: sans-serif;
+              font-size: 14px;
+              margin-right: 10px;
+            }
+            
+            .print-controls button:hover {
+              background: #1f2937;
+            }
+            
+            .print-controls button:last-child {
+              background: #dc2626;
+            }
+            
+            .print-controls button:last-child:hover {
+              background: #b91c1c;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="print-controls no-print">
+            <button onclick="window.print()">🖨️ Print</button>
+            <button onclick="window.close()">❌ Close</button>
+          </div>
+          ${receiptHtml}
+          
+          <script>
+            window.onafterprint = function() {
+              setTimeout(() => {
+                window.close();
+              }, 1000);
+            };
+            
+            document.addEventListener('keydown', function(e) {
+              if (e.ctrlKey && e.key === 'p') {
+                e.preventDefault();
+                window.print();
+              }
+              if (e.key === 'Escape') {
+                window.close();
+              }
+            });
+          </script>
+        </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+    printWindow.focus();
+  };
+
+  if (loading) {
+    return (
+      <InventoryLayout>
+        <div className="space-y-4 sm:space-y-6 p-3 sm:p-4 md:p-6 lg:p-8">
+          <Skeleton className="h-8 sm:h-10 md:h-12 w-48 sm:w-56 md:w-64" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+            {[...Array(4)].map((_, i) => (
+              <Skeleton key={i} className="h-20 sm:h-24" />
+            ))}
+          </div>
+          <Skeleton className="h-64 sm:h-80 md:h-96" />
+        </div>
+      </InventoryLayout>
+    );
   }
-
-  setInstallments((prev) => {
-    const updated = prev.map((plan) => {
-      if (plan.id !== selectedPlan.id) return plan;
-
-      let remainingToApply = amount;
-
-      const updatedPayments = plan.payments.map((p) => {
-      if (p.paymentNumber !== selectedPayment || remainingToApply <= 0) {
-  return { ...p };
-}
-
-        const balance = p.expectedAmount - p.paidAmount;
-        const applied = Math.min(balance, remainingToApply);
-
-        remainingToApply -= applied;
-
-        const newPaid = p.paidAmount + applied;
-
-       return {
-  ...p,
-  paidAmount: newPaid,
-  status:
-    newPaid >= p.expectedAmount
-      ? ('paid' as const)
-      : ('partial' as const),
-  paidDate: new Date().toISOString().split('T')[0],
-  method: paymentMethod,
-};
-      });
-
-      const totalPaid = updatedPayments.reduce(
-        (sum, p) => sum + p.paidAmount,
-        0
-      );
-
-      const remainingBalance = Math.max(plan.total - totalPaid, 0);
-
-     return {
-  ...plan,
-  payments: updatedPayments,
-  remainingBalance,
-  status:
-    remainingBalance === 0
-      ? ('completed' as const)
-      : ('active' as const),
-};
-
-    });
-
-    localStorage.setItem('installment_plans', JSON.stringify(updated));
-    return updated;
-  });
-
- toast.success('Payment recorded successfully', {
-  action: {
-    label: 'Print Receipt',
-    onClick: () =>
-      printInstallmentReceipt({
-        plan: selectedPlan,
-        paymentNumber: selectedPayment,
-        amountPaid: Number(paymentAmount),
-        method: paymentMethod,
-      }),
-  },
-});
-
-
-  printInstallmentReceipt({
-  plan: selectedPlan,
-  paymentNumber: selectedPayment,
-  amountPaid: Number(paymentAmount),
-  method: paymentMethod,
-});
-
-const transaction: InstallmentTransaction = {
-  id: `INST-${selectedPlan.id}-${selectedPayment}-${Date.now()}`,
-  planId: selectedPlan.id,
-  paymentNumber: selectedPayment,
-  customer: selectedPlan.customer,
-  amountPaid: Number(paymentAmount),
-  paymentMethod,
-  paymentFrequency: selectedPlan.paymentFrequency as 'daily' | 'weekly' | 'monthly',
-  numberOfPayments: selectedPlan.numberOfPayments,
-  amountPerPayment: selectedPlan.amountPerPayment,
-  downPayment: selectedPlan.downPayment,
-  remainingBalanceAfter:
-    selectedPlan.remainingBalance - Number(paymentAmount),
-  timestamp: new Date().toISOString(),
-};
-const existing =
-  JSON.parse(localStorage.getItem('installment_transactions') || '[]');
-
-existing.push(transaction);
-
-localStorage.setItem(
-  'installment_transactions',
-  JSON.stringify(existing)
-);
-  setPaymentAmount('');
-  setSelectedPlan(null);
-  setSelectedPayment(null);
-};
-
-
-  const getStatusBadge = (status: string) => {
-    const variants = {
-      active: { label: 'Active', color: 'bg-blue-100 text-blue-800' },
-      completed: { label: 'Completed', color: 'bg-green-100 text-green-800' },
-      defaulted: { label: 'Defaulted', color: 'bg-red-100 text-red-800' },
-    };
-    return (
-      <Badge className={`${variants[status as keyof typeof variants]?.color || 'bg-gray-100'} hover:${variants[status as keyof typeof variants]?.color || 'bg-gray-100'}`}>
-        {variants[status as keyof typeof variants]?.label || status}
-      </Badge>
-    );
-  };
-
-  const getPaymentStatusBadge = (status: string, dueDate: string) => {
-    const now = new Date();
-    const due = new Date(dueDate);
-    const isOverdue = status === 'pending' && due < now;
-
-    if (isOverdue) {
-      return <Badge variant="destructive">Overdue</Badge>;
-    }
-
-    const variants = {
-      paid: { label: 'Paid', color: 'bg-green-100 text-green-800' },
-      pending: { label: 'Pending', color: 'bg-yellow-100 text-green-800' },
-      overdue: { label: 'Overdue', color: 'bg-red-100 text-red-800' },
-      partial: { label: 'Partial', color: 'bg-orange-100 text-orange-800' },
-
-    };
-    return (
-      <Badge className={`${variants[status as keyof typeof variants]?.color || 'bg-gray-100'} hover:${variants[status as keyof typeof variants]?.color || 'bg-gray-100'}`}>
-        {variants[status as keyof typeof variants]?.label || status}
-      </Badge>
-    );
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString();
-  };
-
-
-
-
-  const totalPages = Math.ceil(filteredInstallments.length / ITEMS_PER_PAGE);
-
-const sortedInstallments = [...filteredInstallments].sort(
-  (a, b) =>
-    new Date(b.startDate).getTime() -
-    new Date(a.startDate).getTime()
-);
-
-
-const paginatedInstallments = sortedInstallments.slice(
-  (currentPage - 1) * ITEMS_PER_PAGE,
-  currentPage * ITEMS_PER_PAGE
-);
-
-
-
 
   return (
     <InventoryLayout>
-      <div className="space-y-2 p-1 md:p-6 lg:p-4">
-
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="space-y-4 sm:space-y-6 p-3 sm:p-4 md:p-6 lg:p-8">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Installment Management</h1>
-            <p className="text-gray-600">Track and manage customer installment plans</p>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Installment Plans</h1>
+            <p className="text-sm sm:text-base text-gray-600 mt-1">Manage customer installment payment plans</p>
           </div>
-          
-          <div className="flex items-center gap-3">
-            <Button variant="outline">
-              <TrendingUp className="h-4 w-4 mr-2" />
-              Reports
-            </Button>
-          </div>
+          <Button
+            onClick={() => refetch()}
+            variant="outline"
+            className="gap-2 w-full sm:w-auto"
+            size="sm"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
         </div>
 
-    
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card className='bg-white text-gray-900 border border-gray-100 shadow-2xl rounded-2xl'>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm text-gray-500">Active Plans</div>
-                  <div className="text-xl font-bold">{kpis.activeCount}</div>
-                </div>
-                <div className="bg-blue-500 p-2 rounded-lg">
-                  <Clock className="h-5 w-5 text-white" />
-                </div>
-              </div>
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+          <Card className="bg-gray-900">
+            <CardContent className="p-3 sm:p-4">
+              <div className="text-xs sm:text-sm text-gray-600">Total Plans</div>
+              <div className="text-2xl sm:text-3xl font-bold text-gray-50 mt-1 sm:mt-2">{stats.total}</div>
+              <p className="text-xs text-gray-500 mt-1">All installment plans</p>
             </CardContent>
           </Card>
-          
-          <Card className='bg-white text-gray-900 border border-gray-100 shadow-2xl rounded-2xl'>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm text-gray-500">Overdue</div>
-                  <div className="text-xl font-bold">{kpis.overdueCount}</div>
-                </div>
-                <div className="bg-red-500 p-2 rounded-lg">
-                  <AlertCircle className="h-5 w-5 text-white" />
-                </div>
-              </div>
+
+          <Card className="bg-gray-900 border-blue-200">
+            <CardContent className="p-3 sm:p-4">
+              <div className="text-xs sm:text-sm text-blue-600 font-semibold">Active Plans</div>
+              <div className="text-2xl sm:text-3xl font-bold text-blue-700 mt-1 sm:mt-2">{stats.active}</div>
+              <p className="text-xs text-gray-500 mt-1">Currently active</p>
             </CardContent>
           </Card>
-          
-          <Card className='bg-white text-gray-900 border border-gray-100 shadow-2xl rounded-2xl'>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm text-gray-500">Active Balance</div>
-                  <div className="text-xl font-bold">NGN {kpis.totalActiveBalance.toFixed(2)}</div>
-                </div>
-                <div className="bg-green-500 p-2 rounded-lg">
-                  <DollarSign className="h-5 w-5 text-white" />
-                </div>
-              </div>
+
+          <Card className="bg-gray-900 border-green-200">
+            <CardContent className="p-3 sm:p-4">
+              <div className="text-xs sm:text-sm text-green-600 font-semibold">Completed</div>
+              <div className="text-2xl sm:text-3xl font-bold text-green-700 mt-1 sm:mt-2">{stats.completed}</div>
+              <p className="text-xs text-gray-500 mt-1">Fully paid</p>
             </CardContent>
           </Card>
-          
-          <Card className='bg-white text-gray-900 border border-gray-100 shadow-2xl rounded-2xl'>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm text-gray-500">Collection Rate</div>
-                  <div className="text-xl font-bold">{kpis.collectionRate.toFixed(1)}%</div>
-                </div>
-                <div className="bg-purple-500 p-2 rounded-lg">
-                  <TrendingUp className="h-5 w-5 text-white" />
-                </div>
-              </div>
+
+          <Card className="bg-gray-900 border-red-200">
+            <CardContent className="p-3 sm:p-4">
+              <div className="text-xs sm:text-sm text-red-600 font-semibold">With Overdue</div>
+              <div className="text-2xl sm:text-3xl font-bold text-red-700 mt-1 sm:mt-2">{stats.overdue}</div>
+              <p className="text-xs text-gray-500 mt-1">Overdue payments</p>
             </CardContent>
           </Card>
         </div>
 
-   
-        <Card className='bg-white text-gray-900 border border-gray-100 shadow-2xl rounded-2xl'>
-          <CardHeader>
-            <CardTitle>Filters</CardTitle>
-            <CardDescription>Filter installment plans</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className='flex flex-col gap-2'>
-                <Label htmlFor="search">Search</Label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                  <Input
-                    id="search"
-                    placeholder="Search by customer or ID"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-9  border border-gray-900"
-                  />
-                </div>
-              </div>
-              
-              <div className='flex flex-col gap-2'>
-                <Label htmlFor="status">Status</Label>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger className=' border border-gray-900'>
-                    <SelectValue placeholder="All Statuses" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Statuses</SelectItem>
-                    <SelectItem value="active">Active</SelectItem>
-                    <SelectItem value="completed">Completed</SelectItem>
-                    <SelectItem value="defaulted">Defaulted</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className='flex flex-col gap-2'>
-                <Label htmlFor="date">Start Date From</Label>
-                <Input
-                  id="date"
-                  type="date"
-                  value={dateFilter}
-                  onChange={(e) => setDateFilter(e.target.value)}
-                  className=' border border-gray-900'
-                />
-              </div>
-              
-              <div className="flex items-end">
-                <Button 
-                  variant="secondary" 
-                  className="w-full"
-                  onClick={() => {
-                    setSearchQuery('');
-                    setStatusFilter('all');
-                    setDateFilter('');
-                  }}
+        {/* Error State */}
+        {error && (
+          <Card className="bg-red-50 border-red-200">
+            <CardContent className="p-3 sm:p-4 flex gap-3 items-start">
+              <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-xs sm:text-sm font-semibold text-red-900">Error loading plans</p>
+                <p className="text-xs sm:text-sm text-red-700 mt-1">{error}</p>
+                <Button
+                  onClick={() => refetch()}
+                  size="sm"
+                  variant="outline"
+                  className="mt-2"
                 >
-                  <Filter className="h-4 w-4 mr-2" />
-                  Clear Filters
+                  Try Again
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Filters */}
+         <Card className="bg-gray-900">
+          <CardHeader className="p-4 sm:p-6">
+            <CardTitle className="text-lg sm:text-xl">Search & Filter</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4 p-4 sm:p-6 pt-0 sm:pt-0">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs sm:text-sm font-medium text-gray-700">Search</label>
+                <Input
+                  placeholder="Search by plan name, customer name or email..."
+                  value={searchTerm}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  className="mt-1 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs sm:text-sm font-medium text-gray-700">Status</label>
+                <select
+                  value={selectedStatus}
+                  onChange={(e) => handleStatusChange(e.target.value)}
+                  className="mt-1 w-full px-3 py-2 text-sm border border-gray-300 bg-gray-900 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="active">Active</option>
+                  <option value="completed">Completed</option>
+                  <option value="cancelled">Cancelled</option>
+                  <option value="suspended">Suspended</option>
+                </select>
+              </div>
             </div>
           </CardContent>
         </Card>
 
-   
-        <Card className='bg-white text-gray-900 border border-gray-100 shadow-2xl rounded-2xl'>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Installment Plans</CardTitle>
-                <CardDescription>
-                  {filteredInstallments.length} installment plans found
-                </CardDescription>
-              </div>
-              <Button variant="secondary" onClick={loadInstallments}>
-                <RefreshCcw className="h-4 w-4 mr-2" />
-                Refresh
-              </Button>
-            </div>
+        {/* Plans Table */}
+        <Card className="bg-gray-900 overflow-hidden">
+          <CardHeader className="p-4 sm:p-6">
+            <CardTitle className="text-lg sm:text-xl">Installment Plans</CardTitle>
+            <CardDescription className="text-sm">
+              {filteredPlans.length} plan{filteredPlans.length !== 1 ? 's' : ''} found
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            {filteredInstallments.length === 0 ? (
-              <div className="text-center py-12 text-gray-500">
-                <CreditCard className="h-12 w-12 mx-auto text-gray-300 mb-3" />
-                <p>No installment plans found</p>
-                <p className="text-sm mt-1">Create installment plans from the POS checkout</p>
+          <CardContent className="p-0 sm:p-6 sm:pt-0">
+            {filteredPlans.length === 0 ? (
+              <div className="text-center py-8 sm:py-12 px-4">
+                <p className="text-sm sm:text-base text-gray-500">No installment plans found</p>
               </div>
             ) : (
-              <div className="space-y-6">
-                {paginatedInstallments.map((plan) => (
-              <Card 
-          key={plan.id} 
-          className={`overflow-hidden bg-white text-gray-900 border ${
-            highlightedPlanId === plan.id 
-              ? 'border-yellow-400 bg-yellow-50 shadow-lg' 
-              : 'border-gray-200'
-          } shadow-2xl rounded-2xl`}
-        >
-                    <CardContent className="p-0">
-                 
-                      <div className="p-4 bg-gray-50 border-b">
-                        <div className="flex flex-col md:flex-row md:items-center  md:justify-between">
-                          <div className="flex items-center gap-4">
-                            <div>
-                              <div className="font-medium">{plan.customer.name}</div>
-                              <div className="text-sm text-gray-500">
-                                {plan.customer.phone} • {plan.customer.email}
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-gray-900">
+                      <TableHead className="w-10"></TableHead>
+                      <TableHead className="text-xs sm:text-sm">ID</TableHead>
+                      <TableHead className="text-xs sm:text-sm">Customer</TableHead>
+                      <TableHead className="text-xs sm:text-sm">Total Amount</TableHead>
+                      <TableHead className="text-xs sm:text-sm">Payments</TableHead>
+                      <TableHead className="text-xs sm:text-sm">Progress</TableHead>
+                      <TableHead className="text-xs sm:text-sm">Status</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paginatedPlans.flatMap((plan) => {
+                        const summary = calculatePaymentSummary(plan);
+                        const statusColor = getStatusColor(plan.status);
+                        const isExpanded = expandedRows.has(plan.id);
+                        const payments = plan.InstallmentPayments || [];
+                      const rows = [
+                        (
+                          <TableRow 
+                            key={`plan-${plan.id}`}
+                            className="cursor-pointer hover:bg-gray-900 transition-colors"
+                            onClick={() => toggleRow(plan.id)}
+                          >
+                            <TableCell className="p-2 sm:p-4">
+                              {isExpanded ? (
+                                <ChevronDown className="h-4 w-4 text-gray-500" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4 text-gray-500" />
+                              )}
+                            </TableCell>
+                            <TableCell className="font-medium text-xs sm:text-sm p-2 sm:p-4">
+                              #{String(plan.id).slice(-8)}
+                            </TableCell>
+                            <TableCell className="p-2 sm:p-4">
+                              <div>
+                                <p className="font-medium text-xs sm:text-sm text-gray-50">
+                                  {plan.Customer?.name || 'Unknown'}
+                                </p>
+                                <p className="text-xs text-gray-500 truncate max-w-[150px] sm:max-w-[200px]">
+                                  {plan.Customer?.phone || 'N/A'}
+                                </p>
                               </div>
-                            </div>
-                            {getStatusBadge(plan.status)}
-                          </div>
-                          <div className="text-left flex flex-col ">
-                            <div className="text-sm text-gray-500">Plan ID</div>
-                            <div className="font-mono text-sm">{plan.id}</div>
-                          </div>
-                        </div>
-                        
-                        <div className="grid grid-cols-2  md:grid-cols-4 gap-4 mt-4">
-                          <div>
-                            <div className="text-sm text-gray-500">Total</div>
-                        <div className="font-bold">{formatCurrency(plan.total)}</div>
-                          </div>
-                          <div>
-                            <div className="text-sm text-gray-500">Down Payment</div>
-                            <div className="font-bold">{formatCurrency(plan.downPayment)}</div>
-                          </div>
-                          <div>
-                            <div className="text-sm text-gray-500">Remaining</div>
-                            <div className="font-bold text-green-600">{formatCurrency(plan.remainingBalance)}</div>
-                          </div>
-                          <div>
-                            <div className="text-sm text-gray-500">Payment</div>
-                            <div className="font-bold">{plan.numberOfPayments} × {formatCurrency(plan.amountPerPayment)}</div>
-                          </div>
-                        </div>
-                      </div>
+                            </TableCell>
+                            <TableCell className="p-2 sm:p-4">
+                              <span className="font-semibold text-xs sm:text-sm">
+                                {formatCurrency(plan.total_amount)}
+                              </span>
+                            </TableCell>
+                            <TableCell className="p-2 sm:p-4">
+                              <div className="text-xs sm:text-sm">
+                                <p>
+                                  <span className="font-medium">
+                                    {summary.completedPayments}
+                                  </span>
+                                  /{plan.number_of_payments}
+                                </p>
+                                <p className="text-xs text-gray-500">
+                                  Paid: {formatCurrency(summary.totalPaid)}
+                                </p>
+                              </div>
+                            </TableCell>
+                            <TableCell className="p-2 sm:p-4">
+                              <div className="w-20 sm:w-24 md:w-32">
+                                <div className="w-full bg-gray-200 rounded-full h-2">
+                                  <div
+                                    className="bg-blue-600 h-2 rounded-full transition-all"
+                                    style={{
+                                      width: `${summary.completionPercentage}%`,
+                                    }}
+                                  />
+                                </div>
+                                <p className="text-xs text-gray-600 mt-1">
+                                  {summary.completionPercentage}%
+                                </p>
+                              </div>
+                            </TableCell>
+                            <TableCell className="p-2 sm:p-4">
+                              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                                <Badge className={`${statusColor} text-xs px-2 py-0.5`}>
+                                  {plan.status.charAt(0).toUpperCase() + plan.status.slice(1)}
+                                </Badge>
+                                {summary.overduePayments > 0 && (
+                                  <Badge variant="destructive" className="text-xs px-2 py-0.5">
+                                    {summary.overduePayments} Overdue
+                                  </Badge>
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )
+                      ];
 
-                    
-                      <div className="p-4">
-                         <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => toggleSchedule(plan.id)}
-                          className="mb-3"
-                        >
-                          {expandedPlanId === plan.id ? 'Hide Schedule' : 'View Schedule'}
-                        </Button>
-                         {expandedPlanId === plan.id && (
-                          <>
-                            <div className="text-sm font-medium mb-3">
-                              Payment Schedule ({plan.paymentFrequency})
-                            </div>
+                      if (isExpanded) {
+                        rows.push(
+                          <TableRow key={`expandable-${plan.id}`} className="bg-gray-900">
+                            <TableCell colSpan={8} className="p-0">
+                              <div className="p-3 sm:p-4 border-t border-gray-200">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                                  <h4 className="text-xs sm:text-sm font-semibold text-gray-50">
+                                    Payment Schedule
+                                  </h4>
+                                </div>
+                                
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">
+                                  {payments.length > 0 ? (
+                                    payments
+                                      .sort((a, b) => a.payment_number - b.payment_number)
+                                      .map((payment) => {
+                                        const isOverdue = isPaymentOverdue(payment);
+                                        const paymentStatus: PaymentStatusType = 
+                                          isOverdue 
+                                            ? 'overdue' 
+                                            : payment.status === 'paid' 
+                                              ? 'completed' 
+                                              : (payment.status as PaymentStatusType);
 
-                            <div className="border rounded-lg overflow-hidden">
-                              <table className="w-full">
-                                <thead className="bg-gray-50">
-                                  <tr>
-                                    <th className="p-3 text-left text-sm">Payment #</th>
-                                    <th className="p-3 text-left text-sm">Amount</th>
-                                    <th className="p-3 text-left text-sm">Due Date</th>
-                                    <th className='p-3 text-left text-sm'>Type</th>
-                                    <th className="p-3 text-left text-sm">Status</th>
-                                    <th className="p-3 text-left text-sm">Actions</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {(plan.payments ?? []).map((payment) => (
-                                    <tr key={payment.paymentNumber} className="border-t">
-                                     <td className="p-3"> 
-                                      <div className="flex items-center gap-2">
-                                       <CreditCard className="h-4 w-4 text-gray-400" /> Payment {payment.paymentNumber}
-                                        </div>
-                                         </td>
-                                          <td className="p-3 font-medium"> {formatCurrency(payment.expectedAmount)} </td>
-                                           <td className="p-3"> 
-                                            <div className="flex items-center gap-2">
-                                               <Calendar className="h-4 w-4 text-gray-400" /> {formatDate(payment.dueDate)} 
-                                               </div>
-                                            </td> 
-                                            <td className="p-3">
-                                          <div className="flex gap-2 items-center">
-                                            {payment.type === 'down_payment' ? (
-                                              <Badge variant="secondary">Down Payment</Badge>
-                                            ) : (
-                                              <Badge variant="secondary" className='bg-teal-300 text-teal-700'>Installment</Badge>
-                                            )}
+                                        const statusColor = getStatusColor(paymentStatus);
+                                        
+                                        return (
+                                          <div
+                                            key={payment.id}
+                                            className="bg-gray-900 p-3 sm:p-4 rounded-lg border border-gray-200 hover:shadow-sm transition-shadow flex flex-col"
+                                            onClick={(e) => e.stopPropagation()}
+                                          >
+                                            <div className="flex items-center justify-between mb-2">
+                                              <span className="text-xs font-medium text-gray-500">
+                                                Payment #{payment.payment_number}
+                                              </span>
+                                              <Badge className={`${statusColor} text-xs px-2 py-0.5`}>
+                                                {payment.status === 'paid' ? 'Completed' : payment.status}
+                                              </Badge>
+                                            </div>
+                                            
+                                            <div className="space-y-1.5 flex-1">
+                                              <div className="flex items-center justify-between">
+                                                <span className="text-xs text-gray-600">Amount:</span>
+                                                <span className="text-sm font-semibold text-gray-50">
+                                                  {formatCurrency(payment.amount)}
+                                                </span>
+                                              </div>
+                                              
+                                              <div className="flex items-center gap-1 text-xs">
+                                                <Calendar className="h-3.5 w-3.5 text-gray-500" />
+                                                <span className="text-gray-600">Due:</span>
+                                                <span className="font-medium text-gray-50">
+                                                  {formatDate(payment.due_date)}
+                                                </span>
+                                              </div>
+                                              
+                                              {payment.paid_at && (
+                                                <div className="flex items-center gap-1 text-xs">
+                                                  <CheckCircle className="h-3.5 w-3.5 text-green-600" />
+                                                  <span className="text-gray-600">Paid:</span>
+                                                  <span className="font-medium text-gray-50">
+                                                    {formatDate(payment.paid_at)}
+                                                  </span>
+                                                </div>
+                                              )}
+                                            </div>
+
+                                            <div className="flex gap-2 mt-3">
+                                              <Button
+                                                size="sm"
+                                                variant="outline"
+                                                className="flex-1 text-xs h-8"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleViewReceipt(plan);
+                                                }}
+                                              >
+                                                <Eye className="h-3.5 w-3.5 mr-1.5" />
+                                                View
+                                              </Button>
+                                              
+                                              {payment.status === 'pending' && (
+                                                <Button
+                                                  size="sm"
+                                                  variant="outline"
+                                                  className="flex-1 text-xs h-8"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleRecordPayment(plan.id, payment.id);
+                                                  }}
+                                                >
+                                                  <CreditCard className="h-3.5 w-3.5 mr-1.5" />
+                                                  Record
+                                                </Button>
+                                              )}
+                                            </div>
                                           </div>
-                                        </td>
-                                     <td className="p-3"> {getPaymentStatusBadge(payment.status, payment.dueDate)} </td> 
-                                    
-                                     <td className="p-3"> 
-                                      {payment.status === 'pending' && ( 
-                                        <Button size="sm" onClick={() => { setSelectedPlan(plan); setSelectedPayment(payment.paymentNumber); }} >
-                                           Record Payment </Button> )} {payment.status === 'paid' && payment.paidDate && ( 
-                                        <div className="text-sm text-gray-500">
-                                           Paid on: {formatDate(payment.paidDate)} </div>
-                                         )}
-                                         {payment.status === 'paid' && (
-                                        <Button
-                                          size="sm"
-                                          variant="secondary"
-                                          onClick={() => {
-                                            const txs: InstallmentTransaction[] =
-                                              JSON.parse(localStorage.getItem('installment_transactions') || '[]');
+                                        );
+                                      })
+                                  ) : (
+                                    <div className="col-span-full text-center py-6 sm:py-8 bg-gray-900 rounded-lg border border-gray-200">
+                                      <div className="flex flex-col items-center gap-2">
+                                        <Clock className="h-6 w-6 sm:h-8 sm:w-8 text-gray-400" />
+                                        <p className="text-xs sm:text-sm text-gray-500">
+                                          No payment schedule available
+                                        </p>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      }
 
-                                            const tx = txs.find(
-                                              t =>
-                                                t.planId === plan.id &&
-                                                t.paymentNumber === payment.paymentNumber
-                                            );
+                      return rows;
+                    })}
+                  </TableBody>
+                </Table>
 
-                                            if (!tx) {
-                                              toast.error('Receipt not found');
-                                              return;
-                                            }
 
-                                            printInstallmentReceiptFromTransaction(tx);
-                                          }}
-                                        >
-                                          View Receipt
-                                        </Button>
-                                      )}
-                                       </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </>
-  )}
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
+                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 sm:p-6 border-t border-gray-700">
+                  <div className="text-xs sm:text-sm text-gray-600">
+                    Page {currentPage} of {totalPages}
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(1)}
+                      disabled={currentPage === 1}
+                      className="h-8 w-8 p-0"
+                    >
+                      <ChevronFirst className="h-4 w-4" />
+                    </Button>
+                    
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      disabled={currentPage === 1}
+                      className="h-8 px-3"
+                    >
+                      Previous
+                    </Button>
+
+                    <div className="flex items-center gap-1">
+                      {[...Array(Math.min(5, totalPages))].map((_, i) => {
+                        const pageNum = i + 1;
+                        const isCurrentPage = pageNum === currentPage;
+                        
+                        return (
+                          <Button
+                            key={pageNum}
+                            variant={isCurrentPage ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => setCurrentPage(pageNum)}
+                            className="h-8 w-8 p-0"
+                          >
+                            {pageNum}
+                          </Button>
+                        );
+                      })}
+                      {totalPages > 5 && (
+                        <>
+                          <span className="text-gray-600">...</span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setCurrentPage(totalPages)}
+                            className="h-8 w-8 p-0"
+                          >
+                            {totalPages}
+                          </Button>
+                        </>
+                      )}
+                    </div>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                      disabled={currentPage === totalPages}
+                      className="h-8 px-3"
+                    >
+                      Next
+                    </Button>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(totalPages)}
+                      disabled={currentPage === totalPages}
+                      className="h-8 w-8 p-0"
+                    >
+                      <ChevronLast className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
               </div>
             )}
-            <div className="flex justify-between items-center mt-6">
-            <Button
-              variant="secondary"
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
-            >
-              Previous
-            </Button>
-
-            <span className="text-sm text-gray-600">
-              Page {currentPage} of {totalPages}
-            </span>
-
-            <Button
-              variant="secondary"
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage(p => Math.min(p + 1, totalPages))}
-            >
-              Next
-            </Button>
-          </div>
           </CardContent>
         </Card>
 
-        <Dialog open={!!selectedPlan} onOpenChange={() => setSelectedPlan(null)} >
-  <DialogContent className="max-w-lg bg-gray-900 text-white">
-    <DialogHeader>
-      <DialogTitle>Record Installment Payment</DialogTitle>
-      <DialogDescription>
-        {selectedPlan?.customer.name}
-      </DialogDescription>
-    </DialogHeader>
-
-    <div className="space-y-4">
-      <div className="flex flex-col gap-2">
-        <Label>Amount</Label>
-        <Input
-          type="number"
-          value={paymentAmount}
-          onChange={(e) => setPaymentAmount(e.target.value)}
+        <RecordPaymentDialog
+          open={showPaymentDialog}
+          onOpenChange={setShowPaymentDialog}
+          payment={selectedPayment}
+          planId={selectedPlanId || ''}
+          onPaymentRecorded={handlePaymentRecorded}
         />
-      </div>
 
-      <div className="flex flex-col gap-2">
-        <Label>Payment Method</Label>
-        <Select value={paymentMethod} onValueChange={(v) =>
-          setPaymentMethod(v as 'cash' | 'card' | 'transfer')
-        }>
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="cash">Cash</SelectItem>
-            <SelectItem value="card">Card</SelectItem>
-            <SelectItem value="transfer">Transfer</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-    </div>
+        {/* Receipt Viewer Dialog */}
+        <Dialog open={showReceiptDialog} onOpenChange={setShowReceiptDialog}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-gray-900 text-white">
+            <DialogHeader>
+              <DialogTitle>Installment Plan Receipt</DialogTitle>
+              <DialogDescription>
+                View and print installment plan details
+              </DialogDescription>
+            </DialogHeader>
 
-    <DialogFooter>
-      <Button variant="outline" onClick={() => setSelectedPlan(null)}>
-        Cancel
-      </Button>
-      <Button
-        className="bg-green-400 text-black"
-        onClick={handleRecordPayment}
-      >
-        Save Payment
-      </Button>
-    </DialogFooter>
-  </DialogContent>
+            {receiptPlan && (
+              <>
+                <Receipt
+                  customer={receiptPlan.Customer || { id: '', name: 'Unknown', email: '', phone: '' }}
+                  cart={[]}
+                  subtotal={receiptPlan.total_amount}
+                  discount={0}
+                  tax={0}
+                  total={receiptPlan.total_amount}
+                  paymentMethod="installment"
+                  amountPaid={receiptPlan.InstallmentPayments?.find(p => p.status === 'paid')?.amount || 0}
+                  change={0}
+                  purchaseType="in-store"
+                  installmentPlan={{
+                    numberOfPayments: receiptPlan.number_of_payments,
+                    amountPerPayment: Math.round((receiptPlan.total_amount / receiptPlan.number_of_payments) * 100) / 100,
+                    paymentFrequency: receiptPlan.payment_interval as 'daily' | 'weekly' | 'monthly',
+                    startDate: receiptPlan.start_date,
+                    notes: receiptPlan.notes || '',
+                    downPayment: receiptPlan.InstallmentPayments?.find(p => p.type === 'down_payment')?.amount || 0,
+                    remainingBalance: receiptPlan.remaining_amount,
+                  }}
+                  transactionId={String(receiptPlan.id)}
+                  receiptDate={new Date(receiptPlan.start_date).toLocaleString()}
+                />
+                
+                <div className="flex flex-wrap gap-3 mt-6">
+                  <Button onClick={handlePrintReceipt} className="flex-1" size="sm">
+                    <Printer className="h-4 w-4 mr-2" />
+                    Print
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setShowReceiptDialog(false)}
+                    className="flex-1"
+                    size="sm"
+                  >
+                    <X className="h-4 w-4 mr-2" />
+                    Close
+                  </Button>
+                </div>
+              </>
+            )}
+          </DialogContent>
         </Dialog>
-
       </div>
     </InventoryLayout>
   );

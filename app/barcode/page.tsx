@@ -2,7 +2,7 @@
 
 import { InventoryLayout } from "../inventory/components/InventoryLayout";
 import { BarcodeManager } from "../pos/components/BarcodeManager";
-import { mockProducts } from "../utils/type";
+
 
 
 
@@ -17,7 +17,7 @@ export default function BarcodeSettingsPage() {
           </p>
         </div>
 
-        <BarcodeManager products={mockProducts  } />
+        <BarcodeManager />
       </div>
     </InventoryLayout>
   );

@@ -11,11 +11,38 @@ import { SalesTabs } from './components/SalesTabs';
 import { OverviewTab } from './components/OverviewTab';
 import { TransactionsTab } from './components/TransactionsTab';
 import { ReportsTab } from './components/ReportsTab';
+import { getSalesKPI } from '@/app/lib/api';
+
+interface SalesKPIData {
+  summary: {
+    total_transactions: number;
+    total_sales_amount: number;
+    subtotal: number;
+    total_tax: number;
+    total_discount: number;
+    average_transaction_value: number | string;
+  };
+  purchase_types: {
+    distribution: Record<string, { count: number; total_amount: number }>;
+    total_transactions: number;
+  };
+  payment_methods: {
+    distribution: Record<string, { count: number; total_amount: number; percentage?: number | string }>;
+    total_transactions: number;
+    credit_breakdown: {
+      full_credit: number;
+      partial_credit: number;
+      total_credit: number;
+    };
+  };
+}
 
 export default function SalesPage() {
     const searchParams = useSearchParams();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [kpiData, setKpiData] = useState<SalesKPIData | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
+  const [isLoading, setIsLoading] = useState(true);
   const [dateRange, setDateRange] = useState({
     filter: 'today',
     startDate: new Date().toISOString().split('T')[0],
@@ -25,6 +52,57 @@ export default function SalesPage() {
     const [transactionIdFilter, setTransactionIdFilter] = useState('');
       const [isHydrated, setIsHydrated] = useState(false);
 
+  // Fetch KPI data
+  useEffect(() => {
+    const fetchKPIData = async () => {
+      try {
+        setIsLoading(true);
+        const response = await getSalesKPI(
+          dateRange.filter,
+          dateRange.filter === 'custom' ? dateRange.startDate : undefined,
+          dateRange.filter === 'custom' ? dateRange.endDate : undefined
+        );
+        
+        if (response.success) {
+          setKpiData({
+            summary: response.summary,
+            purchase_types: response.purchase_types,
+            payment_methods: response.payment_methods
+          });
+        }
+      } catch (error) {
+        console.error('Failed to fetch KPI data:', error);
+      
+        setKpiData({
+          summary: {
+            total_transactions: 0,
+            total_sales_amount: 0,
+            subtotal: 0,
+            total_tax: 0,
+            total_discount: 0,
+            average_transaction_value: 0
+          },
+          purchase_types: {
+            distribution: {},
+            total_transactions: 0
+          },
+          payment_methods: {
+            distribution: {},
+            total_transactions: 0,
+            credit_breakdown: {
+              full_credit: 0,
+              partial_credit: 0,
+              total_credit: 0
+            }
+          }
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchKPIData();
+  }, [dateRange]);
 
       useEffect(() => {
     const loadTransactions = () => {
@@ -122,7 +200,7 @@ export default function SalesPage() {
     return filtered;
   }, [transactions, dateRange, paymentMethodFilter, transactionIdFilter]);
 
- if (!isHydrated) {
+ if (!isHydrated || isLoading) {
     return (
       <InventoryLayout>
         <div className="space-y-6 p-1 md:p-4 lg:p-6 text-gray-900 flex items-center justify-center h-screen">
@@ -146,14 +224,18 @@ export default function SalesPage() {
        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6 ">
   <SalesTabs activeTab={activeTab} onTabChange={setActiveTab} />
   <TabsContent value="overview">
-    <OverviewTab transactions={filteredTransactions} dateRange={dateRange} />
+    {kpiData ? (
+      <OverviewTab transactions={filteredTransactions} dateRange={dateRange} kpiData={kpiData} />
+    ) : (
+      <div className="text-gray-600">Loading overview data...</div>
+    )}
   </TabsContent>
   <TabsContent value="transactions">
     <TransactionsTab 
-      transactions={filteredTransactions}
+      dateRange={dateRange}
       paymentMethodFilter={paymentMethodFilter}
       onPaymentMethodFilterChange={setPaymentMethodFilter}
-       highlightedTransactionId={transactionIdFilter}
+      highlightedTransactionId={transactionIdFilter}
     />
   </TabsContent>
   <TabsContent value="reports">

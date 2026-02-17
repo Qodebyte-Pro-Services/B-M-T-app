@@ -6,53 +6,104 @@ import { useParams, useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Printer, Download, ArrowLeft, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { Printer, Download, ArrowLeft, CheckCircle, XCircle, AlertCircle, Loader } from 'lucide-react';
 import { format } from 'date-fns';
 import { InventoryLayout } from '@/app/inventory/components/InventoryLayout';
 import { toast } from 'sonner';
+import { CompanySettings, Expense } from '@/app/utils/type';
+import Image from 'next/image';
 
-type Expense = {
-  id: string;
-  name: string;
-  categoryId: string;
-  amount: number;
-  note?: string;
-  receiptUrl?: string;
-  status: 'approved' | 'pending' | 'rejected';
-  approvedBy?: string;
-  createdBy: string;
-  expenseDate: string;
-  createdAt: string;
-  month: string;
-};
+
+interface SettingsResponse {
+  settings: CompanySettings;
+}
+
 
 export default function InvoicePage() {
   const params = useParams();
   const router = useRouter();
+    const expenseId = params.id as string;
   const [expense, setExpense] = useState<Expense | null>(null);
   const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+      const [settings, setSettings] = useState<CompanySettings | null>(null);
+    const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://primelabs.maskiadmin-management.com/api';
+  const imageBaseUrl = process.env.NEXT_PUBLIC_IMAGE_BASE_URL || 'https://api.bmtpossystem.com';
+
+  
+  const fetchSettings = async () => {
+    try {
+      const token = localStorage.getItem('adminToken');
+      if (!token) {
+        console.warn('No authentication token for settings');
+        return;
+      }
+
+      const response = await fetch(`${apiUrl}/settings`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data: SettingsResponse = await response.json();
+        setSettings(data.settings);
+      } else {
+        console.warn('Failed to fetch settings');
+      }
+    } catch (err) {
+      console.warn('Error fetching settings:', err);
+      toast('Error fetching company settings');
+    }
+  };
+
+const fetchExpenseDetail = async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const token = localStorage.getItem('adminToken');
+      if (!token) {
+        throw new Error('No authentication token found');
+      }
+
+      const response = await fetch(`${apiUrl}/expenses/${expenseId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('Expense not found');
+        }
+        throw new Error('Failed to fetch expense details');
+      }
+
+      const data = await response.json();
+
+      if (data.success && data.expense) {
+        setExpense(data.expense);
+      } else {
+        throw new Error(data.message || 'Failed to load expense');
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error occurred';
+      setError(message);
+      console.error('Error fetching expense:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    
-    const mockExpense: Expense = {
-      id: params.id as string,
-      name: 'Office Supplies Purchase',
-      categoryId: 'cat-1',
-      amount: 45000,
-      note: 'Monthly office supplies restock including printer paper, pens, and stationery',
-      receiptUrl: '/receipt-sample.jpg',
-      status: 'approved',
-      approvedBy: 'Admin User',
-      createdBy: 'Manager User',
-      expenseDate: '2024-01-15T10:30:00Z',
-      createdAt: '2024-01-15T11:45:00Z',
-      month: 'Jan 2024',
-    };
-    
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setExpense(mockExpense);
-    setLoading(false);
-  }, [params.id]);
+    if (expenseId) {
+      fetchExpenseDetail();
+      fetchSettings();
+    }
+  }, [expenseId]);
 
   const handlePrint = () => {
     window.print();
@@ -74,23 +125,66 @@ export default function InvoicePage() {
     }
   };
 
+  const formatPaymentMethod = (method: string) => {
+    return method.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+  };
+
   if (loading) {
     return (
-      <InventoryLayout>
-        <div className="p-6 flex items-center justify-center">
-          <div className="text-center">Loading...</div>
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="flex flex-col items-center gap-4">
+          <Loader className="h-12 w-12 animate-spin text-blue-500" />
+          <p className="text-gray-600">Loading expense details...</p>
         </div>
-      </InventoryLayout>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 p-4 md:p-6">
+        <Button
+          variant="outline"
+          onClick={() => router.back()}
+          className="mb-6"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back
+        </Button>
+
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3 text-red-800">
+              <AlertCircle className="h-6 w-6" />
+              <div>
+                <p className="font-semibold">Error Loading Expense</p>
+                <p className="text-sm">{error}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
   if (!expense) {
     return (
-      <InventoryLayout>
-        <div className="p-6">
-          <div className="text-center">Expense not found</div>
-        </div>
-      </InventoryLayout>
+      <div className="min-h-screen bg-gray-50 p-4 md:p-6">
+        <Button
+          variant="outline"
+          onClick={() => router.back()}
+          className="mb-6"
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Back
+        </Button>
+
+        <Card>
+          <CardContent className="pt-6 text-center">
+            <p className="text-gray-500">No expense data found</p>
+          </CardContent>
+        </Card>
+      </div>
     );
   }
 
@@ -141,7 +235,7 @@ export default function InvoicePage() {
                 </div>
                 
                 <div className="mt-4 md:mt-0 text-right">
-                  <div className="text-3xl font-bold text-green-500">NGN {expense.amount.toLocaleString()}</div>
+                  <div className="text-3xl font-bold text-green-500">NGN {expense.expense_amount.toLocaleString()}</div>
                   <div className="mt-2">{getStatusBadge(expense.status)}</div>
                 </div>
               </div>
@@ -151,11 +245,12 @@ export default function InvoicePage() {
                 <div>
                   <h3 className="font-bold text-lg mb-3">From</h3>
                   <div className="space-y-1">
-                    <p className="font-medium">Your Company Name</p>
-                    <p className="text-sm text-gray-300">123 Business Street</p>
-                    <p className="text-sm text-gray-300">Lagos, Nigeria</p>
-                    <p className="text-sm text-gray-300">contact@company.com</p>
-                    <p className="text-sm text-gray-300">+234 123 456 7890</p>
+                      {settings?.site_name || 'Your Company Name'}
+                      <p className="text-sm text-gray-600"> {settings?.company_address || '123 Business Street, Lagos, Nigeria'}</p>
+
+                      <p className="text-sm text-gray-600">{settings?.company_email || 'contact@company.com'}</p>
+                   
+                      <p className="text-sm text-gray-600">{settings?.company_phone || '+234 123 456 7890'}</p>
                   </div>
                 </div>
                 
@@ -163,25 +258,27 @@ export default function InvoicePage() {
                   <h3 className="font-bold text-lg mb-3">Expense Details</h3>
                   <div className="space-y-2">
                     <div className="flex justify-between">
-                      <span className="text-gray-400">Expense Name:</span>
-                      <span className="font-medium">{expense.name}</span>
-                    </div>
-                    <div className="flex justify-between">
                       <span className="text-gray-400">Category:</span>
-                      <span>Office Supplies</span>
+                     <p className="text-lg font-semibold text-gray-100 mt-1">
+                    {expense.expense_category?.name || 'Uncategorized'}
+                  </p>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-400">Expense Date:</span>
-                      <span>{format(new Date(expense.expenseDate), 'MMMM dd, yyyy')}</span>
+                      <span>{format(new Date(expense.date), 'MMMM dd, yyyy')}</span>
+                    </div>
+                     <div className="flex justify-between">
+                      <span className="text-gray-600">Payment Method:</span>
+                      <span>{formatPaymentMethod(expense.payment_method)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-400">Created By:</span>
-                      <span>{expense.createdBy}</span>
+                      <span>{expense.admin?.full_name || 'Unknown'}</span>
                     </div>
-                    {expense.approvedBy && (
+                    {expense.expense_approved_by && (
                       <div className="flex justify-between">
                         <span className="text-gray-400">Approved By:</span>
-                        <span>{expense.approvedBy}</span>
+                        <span>{expense.expense_approved_by}</span>
                       </div>
                     )}
                   </div>
@@ -203,14 +300,16 @@ export default function InvoicePage() {
                       <tr className="border-b">
                         <td className="py-3">
                           <div>
-                            <p className="font-medium">{expense.name}</p>
                             {expense.note && (
                               <p className="text-sm text-gray-300 mt-1">{expense.note}</p>
                             )}
                           </div>
                         </td>
                         <td className="py-3 text-right font-medium">
-                          NGN {expense.amount.toLocaleString()}
+                         NGN {Number(expense.expense_amount).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2
+                    })}
                         </td>
                       </tr>
                     </tbody>
@@ -218,7 +317,10 @@ export default function InvoicePage() {
                       <tr className="border-t">
                         <td className="py-3 font-bold">Total</td>
                         <td className="py-3 text-right font-bold text-lg">
-                          NGN {expense.amount.toLocaleString()}
+                         NGN {Number(expense.expense_amount).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2
+                    })}
                         </td>
                       </tr>
                     </tfoot>
@@ -227,16 +329,25 @@ export default function InvoicePage() {
               </div>
 
       
-              {expense.receiptUrl && (
+              {expense.expense_reciept_url && (
                 <div className="mb-8">
                   <h3 className="font-bold text-lg mb-4">Receipt</h3>
                   <div className="border border-gray-200 rounded-lg p-4">
                     <p className="text-sm text-gray-300 mb-2">Attached Receipt:</p>
                     <div className="flex items-center gap-4">
                       <div className="w-32 h-32 bg-gray-100 rounded flex items-center justify-center">
-                        <span className="text-gray-400">Receipt Preview</span>
+                        <span className="text-gray-400"> <Image
+                    src={`${imageBaseUrl}${expense.expense_reciept_url}`}
+                    alt="Expense Receipt"
+                    width={50}
+                    height={50}
+                    className="w-full h-auto object-cover"
+                    onError={(e) => {
+                      e.currentTarget.src = '/placeholder-receipt.png';
+                    }}
+                  /></span>
                       </div>
-                      <Button variant="outline" onClick={() => window.open(expense.receiptUrl, '_blank')}>
+                      <Button variant="outline" onClick={() => window.open(`${imageBaseUrl}${expense.expense_reciept_url}`, '_blank')}>
                         View Full Receipt
                       </Button>
                     </div>
@@ -266,16 +377,28 @@ export default function InvoicePage() {
                   <div className="text-center">
                     <div className="flex items-center gap-3">
                     <div className="h-8 w-8 bg-green-400 rounded-lg flex items-center justify-center">
-                        <span className="text-black font-bold text-sm">BMT</span>
+                        <span className="text-black font-bold text-sm">PL</span>
                     </div>
                     <div>
-                        <div className="font-bold text-white text-lg">Big Men</div>
-                        <div className="text-xs text-gray-400 -mt-1">Transaction Apparel</div>
+                        <div className="font-bold text-white text-lg">Prime</div>
+                        <div className="text-xs text-gray-400 -mt-1">Labs</div>
                     </div>
                     </div>
                     <p className="text-xs text-gray-600">Expense Management System</p>
                   </div>
                 </div>
+                 <div>
+    <span>
+      © {new Date().getFullYear()} PrimeLabs Business Solution. All rights reserved.
+    </span>
+
+    <span className="flex items-center gap-1">
+      Powered by
+      <span className="font-medium text-gray-700">
+        PrimeLabs Business Solution
+      </span>
+    </span>
+                 </div>
               </div>
             </CardContent>
           </Card>

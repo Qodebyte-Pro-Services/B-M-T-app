@@ -14,6 +14,17 @@ const nextConfig: NextConfig = {
       {
         protocol: "https",
         hostname: "api.dicebear.com"
+      },
+     {
+        protocol: "http",
+        hostname: "localhost", 
+        port: "5002",         
+        pathname: "/uploads/**", 
+      },
+      {
+        protocol: "https",
+        hostname: "primelabs.maskiadmin-management.com", 
+        pathname: "/uploads/**",
       }
     ]
   }

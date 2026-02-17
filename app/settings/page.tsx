@@ -19,7 +19,25 @@ import { Building, Lock, UserCog, Plus, Pencil, Trash2, Save, Upload, Eye, EyeOf
 import { InventoryLayout } from '../inventory/components/InventoryLayout';
 import { toast } from 'sonner';
 import Link from 'next/link';
+import { usePageGuard } from '../hooks/usePageGuard';
 
+
+const ADMIN_MANAGEMENT = {
+  CREATE_ADMIN: 'create_admin',
+  EDIT_ADMIN: 'edit_admin',
+  DELETE_ADMIN: 'delete_admin',
+  ASSIGN_ROLES: 'assign_roles', 
+  VIEW_ADMIN_LOGS: 'view_admin_logs',
+  MANAGE_ROLES_PERMISSIONS: 'manage_roles_permissions',
+  CREATE_ROLE: 'create_role',
+  REMOVE_ROLE: 'remove_role',
+  MANAGE_ROLES: 'manage_roles',
+  MANAGE_REPORTS: 'manage_reports',
+  VIEW_ADMINS: 'view_admins',
+  VIEW_ADMIN_PROFILE: 'view_admin_profile',
+  VIEW_SETTINGS: 'view_settings',
+  EDIT_SETTINGS: 'edit_settings',
+};
 
 const PRODUCT_PERMISSIONS = {
   CREATE_PRODUCT: 'create_product',
@@ -47,13 +65,6 @@ const PRODUCT_PERMISSIONS = {
   DELETE_PRODUCT_VARIANTS: 'delete_product_variants',
 };
 
-const STOCK_PERMISSIONS = {
-  VIEW_STOCK: 'view_stock',
-  ADJUST_STOCK: 'adjust_stock',
-  MANAGE_STOCK: 'manage_stock',
-  VIEW_STOCK_HISTORY: 'view_stock_history',
-};
-
 const SALES_PERMISSIONS = {
   CREATE_SALE: 'create_sale',
   VIEW_SALES: 'view_sales',
@@ -62,6 +73,21 @@ const SALES_PERMISSIONS = {
   VIEW_ORDERS: 'view_orders',
   CREATE_ORDER: 'create_order',
   VIEW_ANALYTICS: 'view_analytics',
+};
+
+const DISCOUNT_PERMISSIONS = {
+  CREATE_DISCOUNT: 'create_discount',
+  VIEW_DISCOUNTS: 'view_discounts',
+  UPDATE_DISCOUNT: 'update_discount',
+  DELETE_DISCOUNT: 'delete_discount',
+  LINK_DISCOUNT: 'link_discount',
+};
+
+const TAX_PERMISSIONS = {
+  CREATE_TAX: 'create_tax',
+  VIEW_TAXES: 'view_taxes',
+  UPDATE_TAX: 'update_tax',
+  DELETE_TAX: 'delete_tax',
 };
 
 const STAFF_PERMISSIONS = {
@@ -97,48 +123,99 @@ const FINANCIAL_PERMISSIONS = {
   VIEW_FINANCIAL_REPORTS: 'view_financial_reports',
 };
 
+const INVENTORY_MGT_PERMISSIONS = {
+  VIEW_INVENTORY: 'view_inventory',
+  ADJUST_INVENTORY: 'adjust_inventory',
+  MANAGE_INVENTORY: 'manage_inventory',
+};
+
+const LOGIN_ATTEMPT_PERMISSIONS = {
+  VIEW_LOGIN_ATTEMPTS: 'view_login_attempts',
+  APPROVE_LOGIN_ATTEMPT: 'approve_login_attempt',
+  REJECT_LOGIN_ATTEMPT: 'reject_login_attempt',
+  MANAGE_LOGIN_ATTEMPTS: 'manage_login_attempts',
+};
+
+const CATEGORY_ATTRIBUTE_PERMISSIONS = {
+  MANAGE_CATEGORIES: 'manage_categories',
+  MANAGE_ATTRIBUTES: 'manage_attributes',
+}
+
 const ALL_PERMISSIONS = {
-  ...PRODUCT_PERMISSIONS,
-  ...STOCK_PERMISSIONS,
+  ...ADMIN_MANAGEMENT,
   ...SALES_PERMISSIONS,
+  ...PRODUCT_PERMISSIONS,
   ...STAFF_PERMISSIONS,
   ...CUSTOMER_PERMISSIONS,
   ...FINANCIAL_PERMISSIONS,
+  ...INVENTORY_MGT_PERMISSIONS,
+  ...LOGIN_ATTEMPT_PERMISSIONS,
+  ...DISCOUNT_PERMISSIONS,
+  ...TAX_PERMISSIONS,
+  ...CATEGORY_ATTRIBUTE_PERMISSIONS,
 };
+
+
 
 
 const PERMISSION_GROUPS = [
   {
+    name: 'Admin Management',
+    permissions: ADMIN_MANAGEMENT,
+    description: 'Manage admins, roles, and system settings',
+  },
+  {
     name: 'Product Management',
     permissions: PRODUCT_PERMISSIONS,
-    description: 'Manage products, categories, attributes, and variants'
+    description: 'Manage products, categories, and attributes',
   },
   {
-    name: 'Stock Management',
-    permissions: STOCK_PERMISSIONS,
-    description: 'Manage inventory and stock levels'
-  },
-  {
-    name: 'Sales & Orders',
+    name: 'Sales Management',
     permissions: SALES_PERMISSIONS,
-    description: 'Manage sales, orders, and analytics'
+    description: 'Manage sales, orders, and analytics',
+  },
+  {
+    name: 'Discounts',
+    permissions: DISCOUNT_PERMISSIONS,
+    description: 'Create and manage discounts',
+  },
+  {
+    name: 'Taxes',
+    permissions: TAX_PERMISSIONS,
+    description: 'Manage tax configurations',
+  },
+  {
+    name: 'Inventory Management',
+    permissions: INVENTORY_MGT_PERMISSIONS,
+    description: 'Manage inventory and stock adjustments',
   },
   {
     name: 'Staff Management',
     permissions: STAFF_PERMISSIONS,
-    description: 'Manage staff, roles, and permissions'
+    description: 'Manage staff accounts and roles',
   },
   {
     name: 'Customer Management',
     permissions: CUSTOMER_PERMISSIONS,
-    description: 'Manage customer data and history'
+    description: 'Manage customer data and history',
   },
   {
     name: 'Financial Management',
     permissions: FINANCIAL_PERMISSIONS,
-    description: 'Manage expenses and financial reports'
+    description: 'Manage expenses and financial reports',
+  },
+  {
+    name: 'Login Attempts',
+    permissions: LOGIN_ATTEMPT_PERMISSIONS,
+    description: 'Approve or reject login attempts',
+  },
+  {
+    name: 'Category & Attribute Management',
+    permissions: CATEGORY_ATTRIBUTE_PERMISSIONS,
+    description: 'Manage product categories and attributes',
   }
 ];
+
 
 
 const formatPermissionLabel = (key: string) => {
@@ -149,11 +226,11 @@ const formatPermissionLabel = (key: string) => {
 };
 
 type Role = {
-  id: string;
-  name: string;
+  roles_id: string;
+  role_name: string;
   permissions: string[];
   createdAt: string;
-  userCount: number;
+  role_count: number;
 };
 
 type BusinessInfo = {
@@ -163,20 +240,30 @@ type BusinessInfo = {
   companyEmail: string;
   companyPhone: string;
   companyAddress: string;
-  businessLogo: string | null;
+  businessLogo: File | string | null;
 };
 
 export default function SettingsPage() {
+    usePageGuard();
   const [activeTab, setActiveTab] = useState('business');
-  const [businessInfo, setBusinessInfo] = useState<BusinessInfo>({
-    ownerFirstName: 'John',
-    ownerLastName: 'Doe',
-    ownerEmail: 'john@business.com',
-    companyEmail: 'info@business.com',
-    companyPhone: '+234 123 456 7890',
-    companyAddress: '123 Business Street, Lagos, Nigeria',
-    businessLogo: null,
-  });
+  const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://primelabs.maskiadmin-management.com/api';
+
+  const getAuthToken = () => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('adminToken');
+    }
+    return null;
+  };
+ const [businessInfo, setBusinessInfo] = useState<BusinessInfo>({
+  ownerFirstName: '',
+  ownerLastName: '',
+  ownerEmail: '',
+  companyEmail: '',
+  companyPhone: '',
+  companyAddress: '',
+  businessLogo: null,
+});
+
   const [passwordForm, setPasswordForm] = useState({
     oldPassword: '',
     newPassword: '',
@@ -191,41 +278,8 @@ export default function SettingsPage() {
     const [taxRate, setTaxRate] = useState<number>(0);
   const [isTaxDialogOpen, setIsTaxDialogOpen] = useState(false);
   const [tempTaxRate, setTempTaxRate] = useState<number>(0);
-  
-  const [roles, setRoles] = useState<Role[]>([
-    {
-      id: 'role-1',
-      name: 'Administrator',
-      permissions: Object.values(ALL_PERMISSIONS),
-      createdAt: '2024-01-01',
-      userCount: 1,
-    },
-    {
-      id: 'role-2',
-      name: 'Manager',
-      permissions: [
-        ...Object.values(PRODUCT_PERMISSIONS),
-        ...Object.values(STOCK_PERMISSIONS),
-        ...Object.values(SALES_PERMISSIONS),
-        ...Object.values(CUSTOMER_PERMISSIONS),
-      ],
-      createdAt: '2024-01-15',
-      userCount: 3,
-    },
-    {
-      id: 'role-3',
-      name: 'Sales Staff',
-      permissions: [
-        PRODUCT_PERMISSIONS.VIEW_PRODUCTS,
-        SALES_PERMISSIONS.CREATE_SALE,
-        SALES_PERMISSIONS.VIEW_SALES,
-        CUSTOMER_PERMISSIONS.CREATE_CUSTOMER,
-        CUSTOMER_PERMISSIONS.VIEW_CUSTOMER,
-      ],
-      createdAt: '2024-02-01',
-      userCount: 5,
-    },
-  ]);
+  const [dbTax, setDbTax] = useState<{ id: number; taxRate: number } | null>(null);
+  const [roles, setRoles] = useState<Role[]>([]);
   const [isRoleDialogOpen, setIsRoleDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingRole, setEditingRole] = useState<Role | null>(null);
@@ -247,28 +301,103 @@ const paginatedRoles = roles.slice(
 );
 
 
-  useEffect(() => {
-    const savedTaxRate = localStorage.getItem('pos_default_tax_rate');
-    if (savedTaxRate) {
-      const rate = parseFloat(savedTaxRate);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setTaxRate(rate);
-      setTempTaxRate(rate);
+useEffect(() => {
+  const fetchTax = async () => {
+    try {
+      const res = await fetch(`${apiUrl}/sales/taxes`, {
+        headers: {
+          Authorization: `Bearer ${getAuthToken()}`,
+        },
+        credentials: 'include',
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.taxes.length > 0) {
+        const taxFromDb = data.taxes[0];
+
+        const percent = taxFromDb.taxRate * 100;
+
+        setDbTax(taxFromDb);
+        setTaxRate(percent);
+        setTempTaxRate(percent);
+
+      
+        localStorage.setItem('pos_default_tax_rate', percent.toString());
+        toast('Default tax rate loaded from database');
+      } else {
+       
+        const localTax = localStorage.getItem('pos_default_tax_rate');
+        if (localTax) {
+          setTaxRate(Number(localTax));
+          setTempTaxRate(Number(localTax));
+          toast('Default tax rate loaded from local storage');
+        }
+        toast('No tax rate found in database, using default or local storage value');
+      }
+      toast.success('Tax rate loaded successfully');
+    } catch (err) {
+      console.error('Failed to fetch tax:', err);
     }
-  }, []);
+  };
+
+  fetchTax();
+}, [apiUrl]);
 
   
-  const handleTaxRateSave = () => {
-    if (tempTaxRate < 0 || tempTaxRate > 100) {
-      toast('Tax rate must be between 0 and 100!');
-      return;
+const handleTaxRateSave = async () => {
+  if (tempTaxRate < 0 || tempTaxRate > 100) {
+    toast.error('Tax rate must be between 0 and 100');
+    return;
+  }
+
+  const taxDecimal = tempTaxRate / 100;
+
+  try {
+    let res;
+
+    if (dbTax) {
+    
+      res = await fetch(`${apiUrl}/sales/taxes/${dbTax.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getAuthToken()}`,
+        },
+        credentials: 'include',
+        body: JSON.stringify({ taxRate: taxDecimal }),
+      });
+    } else {
+    
+      res = await fetch(`${apiUrl}/tax`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getAuthToken()}`,
+        },
+        credentials: 'include',
+        body: JSON.stringify({ taxRate: taxDecimal }),
+      });
     }
 
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message);
+
+   
     setTaxRate(tempTaxRate);
     localStorage.setItem('pos_default_tax_rate', tempTaxRate.toString());
+
+    if (!dbTax && data.tax) {
+      setDbTax(data.tax);
+    }
+
+    toast.success('Tax rate saved successfully');
     setIsTaxDialogOpen(false);
-    toast('Tax rate updated successfully!');
-  };
+  } catch (err: unknown) {
+    toast.error(err instanceof Error ? err.message : 'Failed to save tax rate');
+  }
+};
+
 
   const handleTaxDialogOpen = () => {
     setTempTaxRate(taxRate);
@@ -289,86 +418,229 @@ const paginatedRoles = roles.slice(
   };
 
 
-  const handleBusinessInfoSave = () => {
-   
-    console.log('Saving business info:', businessInfo);
-    alert('Business information saved successfully!');
-  };
+  const handleBusinessInfoSave = async () => {
+  try {
+    const formData = new FormData();
+
+    formData.append('owner_first_name', businessInfo.ownerFirstName);
+    formData.append('owner_last_name', businessInfo.ownerLastName);
+    formData.append('owner_email', businessInfo.ownerEmail);
+    formData.append('company_email', businessInfo.companyEmail);
+    formData.append('company_phone', businessInfo.companyPhone);
+    formData.append('company_address', businessInfo.companyAddress);
+    if (businessInfo.businessLogo instanceof File) {
+  formData.append('logo', businessInfo.businessLogo);
+}
 
 
-  const handlePasswordChange = () => {
-    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
-      toast('New password and confirmation do not match!');
-      return;
-    }
-    
-    if (passwordForm.newPassword.length < 8) {
-      toast('New password must be at least 8 characters long!');
-      return;
-    }
-    
-   
-    console.log('Changing password');
-    toast('Password changed successfully!');
-    
-    
-    setPasswordForm({
-      oldPassword: '',
-      newPassword: '',
-      confirmPassword: '',
+    const res = await fetch(`${apiUrl}/settings`, {
+      method: 'PUT',
+      body: formData,
+      headers: {
+        "Authorization": `Bearer ${getAuthToken()}`,
+      },
+      credentials: 'include',
     });
-  };
+
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.message);
+
+    toast.success('Business settings updated');
+  } catch (error: unknown) {
+    console.error("Error updating business settings:", error);
+    toast.error(error instanceof Error ? error.message : "Update failed");
+  }
+};
 
 
-  const handleCreateRole = () => {
-    if (!roleForm.name.trim()) {
-      toast('Role name is required!');
-      return;
+
+const handlePasswordChange = async () => {
+  if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+    toast.error('Passwords do not match');
+    return;
+  }
+
+  try {
+    const res = await fetch(`${apiUrl}/auth/password`, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        "Authorization": `Bearer ${getAuthToken()}`,
+      },
+      credentials: 'include',
+      body: JSON.stringify({
+        oldPassword: passwordForm.oldPassword,
+        newPassword: passwordForm.newPassword,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message);
+
+    toast.success('Password updated');
+    setPasswordForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
+  } catch (error: unknown) {
+    toast.error(error instanceof Error ? error.message : 'Password update failed');
+  }
+};
+
+
+
+useEffect(() => {
+  const fetchRoles = async () => {
+    try {
+      const res = await fetch(`${apiUrl}/roles?page=${currentRolePage}&limit=${ROLES_PER_PAGE}`, {
+        headers: {
+          "Authorization": `Bearer ${getAuthToken()}`,
+        },
+        credentials: 'include',
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+       setRoles(
+  data.roles.map((r: Role) => ({
+    roles_id: r.roles_id,
+    role_name: r.role_name,
+    permissions: Array.isArray(r.permissions)
+      ? r.permissions
+      : typeof r.permissions === 'string'
+        ? JSON.parse(r.permissions)
+        : [],
+    createdAt: r.createdAt.split('T')[0],
+    role_count: r.role_count || 0,
+  }))
+);
+
+      }
+    } catch (err)   {
+      toast.error('Failed to load roles');
+    console.error('Error fetching roles:', err);
     }
+  };
+   fetchRoles();
+}, [currentRolePage]);
 
-    const newRole: Role = {
-      id: `role-${Date.now()}`,
-      name: roleForm.name,
-      permissions: roleForm.permissions,
-      createdAt: new Date().toISOString().split('T')[0],
-      userCount: 0,
-    };
 
-    setRoles([...roles, newRole]);
-    setRoleForm({ name: '', permissions: [] });
-    setIsRoleDialogOpen(false);
-    setSelectAll(false);
+
+
+useEffect(() => {
+  const fetchSettings = async () => {
+    try {
+      const res = await fetch(`${apiUrl}/settings`, {
+        headers: {
+          "Authorization": `Bearer ${getAuthToken()}`,
+        },
+        credentials: 'include',
+      });
+      const data = await res.json();
+
+      if (res.ok) {
+        setBusinessInfo({
+          ownerFirstName: data.settings.owner_first_name || '',
+          ownerLastName: data.settings.owner_last_name || '',
+          ownerEmail: data.settings.owner_email || '',
+          companyEmail: data.settings.company_email || '',
+          companyPhone: data.settings.company_phone || '',
+          companyAddress: data.settings.company_address || '',
+          businessLogo: data.settings.site_logo || null,
+        });
+
+        setLogoPreview(data.settings.site_logo || null);
+      }
+    } catch (err) {
+      toast.error('Failed to load settings');
+    }
   };
 
+  fetchSettings();
+}, []);
 
-  const handleUpdateRole = () => {
-    if (!editingRole || !roleForm.name.trim()) return;
 
-    const updatedRoles = roles.map(role =>
-      role.id === editingRole.id
-        ? { ...role, name: roleForm.name, permissions: roleForm.permissions }
-        : role
-    );
+const handleCreateRole = async () => {
+  try {
+    const res = await fetch(`${apiUrl}/roles/create-role`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', "Authorization": `Bearer ${getAuthToken()}` },
+      credentials: 'include',
+      body: JSON.stringify({
+        role_name: roleForm.name,
+        permissions: roleForm.permissions,
+      }),
+    });
 
-    setRoles(updatedRoles);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message);
+
+    toast.success('Role created');
+    setIsRoleDialogOpen(false);
     setRoleForm({ name: '', permissions: [] });
+    setSelectAll(false);
+    setCurrentRolePage(1);
+  } catch (err: unknown) {
+    toast.error(err instanceof Error ? err.message : 'Failed to create role');
+  }
+};
+
+
+
+  const handleUpdateRole = async () => {
+  if (!editingRole) return;
+
+  try {
+    const res = await fetch(`${apiUrl}/roles/${editingRole.roles_id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', "Authorization": `Bearer ${getAuthToken()}` },
+      credentials: 'include',
+      body: JSON.stringify({
+        role_name: roleForm.name,
+        permissions: roleForm.permissions,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message);
+
+    toast.success('Role updated');
     setIsEditDialogOpen(false);
     setEditingRole(null);
-    setSelectAll(false);
-  };
+  } catch (err: unknown) {
+    toast.error(err instanceof Error ? err.message : 'Failed to update role');
+  }
+};
 
 
-  const handleDeleteRole = (id: string) => {
-    if (confirm('Are you sure you want to delete this role? This action cannot be undone.')) {
-      setRoles(roles.filter(role => role.id !== id));
-    }
-  };
+
+
+
+
+  const handleDeleteRole = async (id: string) => {
+  if (!confirm('Delete this role?')) return;
+
+  try {
+    const res = await fetch(`${apiUrl}/roles/${id}`, {
+      headers: { "Authorization": `Bearer ${getAuthToken()}` },
+      method: 'DELETE',
+      credentials: 'include',
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message);
+
+    toast.success('Role deleted');
+    setRoles(prev => prev.filter(r => r.roles_id !== id));
+  } catch (err: unknown) {
+    toast.error(err instanceof Error ? err.message : 'Failed to delete role');
+  }
+};
+
 
 
   const startEditingRole = (role: Role) => {
     setEditingRole(role);
     setRoleForm({
-      name: role.name,
+      name: role.role_name,
       permissions: [...role.permissions],
     });
     setIsEditDialogOpen(true);
@@ -592,7 +864,7 @@ const paginatedRoles = roles.slice(
                         <Label htmlFor="ownerFirstName">Owner First Name</Label>
                         <Input
                           id="ownerFirstName"
-                          value={businessInfo.ownerFirstName}
+                          value={businessInfo.ownerFirstName || ''}
                           onChange={(e) => setBusinessInfo({...businessInfo, ownerFirstName: e.target.value})}
                           placeholder="John"
                         />
@@ -601,7 +873,7 @@ const paginatedRoles = roles.slice(
                         <Label htmlFor="ownerLastName">Owner Last Name</Label>
                         <Input
                           id="ownerLastName"
-                          value={businessInfo.ownerLastName}
+                          value={businessInfo.ownerLastName || ''}
                           onChange={(e) => setBusinessInfo({...businessInfo, ownerLastName: e.target.value})}
                           placeholder="Doe"
                         />
@@ -613,7 +885,7 @@ const paginatedRoles = roles.slice(
                       <Input
                         id="ownerEmail"
                         type="email"
-                        value={businessInfo.ownerEmail}
+                        value={businessInfo.ownerEmail || ''}
                         onChange={(e) => setBusinessInfo({...businessInfo, ownerEmail: e.target.value})}
                         placeholder="owner@business.com"
                       />
@@ -624,7 +896,7 @@ const paginatedRoles = roles.slice(
                       <Input
                         id="companyEmail"
                         type="email"
-                        value={businessInfo.companyEmail}
+                        value={businessInfo.companyEmail || ''}
                         onChange={(e) => setBusinessInfo({...businessInfo, companyEmail: e.target.value})}
                         placeholder="info@business.com"
                       />
@@ -634,7 +906,7 @@ const paginatedRoles = roles.slice(
                       <Label htmlFor="companyPhone">Company Phone</Label>
                       <Input
                         id="companyPhone"
-                        value={businessInfo.companyPhone}
+                        value={businessInfo.companyPhone || ''}
                         onChange={(e) => setBusinessInfo({...businessInfo, companyPhone: e.target.value})}
                         placeholder="+234 123 456 7890"
                       />
@@ -644,7 +916,7 @@ const paginatedRoles = roles.slice(
                       <Label htmlFor="companyAddress">Company Address</Label>
                       <Textarea
                         id="companyAddress"
-                        value={businessInfo.companyAddress}
+                        value={businessInfo.companyAddress || ''}
                         onChange={(e) => setBusinessInfo({...businessInfo, companyAddress: e.target.value})}
                         placeholder="Enter your business address"
                         rows={3}
@@ -664,13 +936,22 @@ const paginatedRoles = roles.slice(
                         </div>
                         <div className="flex-1">
                           <div className="border-2 border-dashed border-gray-300 rounded-lg p-4">
-                            <Input
-                              type="file"
-                              accept="image/*"
-                              onChange={handleLogoUpload}
-                              className="hidden"
-                              id="logo-upload"
-                            />
+                                     <Input
+  type="file"
+  accept="image/*"
+  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setLogoPreview(URL.createObjectURL(file));
+    setBusinessInfo(prev => ({
+      ...prev,
+      businessLogo: file, 
+    }));
+  }}
+/>
+
+
                             <Label htmlFor="logo-upload" className="cursor-pointer flex flex-col items-center justify-center">
                               <Upload className="w-8 h-8 text-gray-400 mb-2" />
                               <span className="text-sm font-medium">Click to upload logo</span>
@@ -947,12 +1228,12 @@ const paginatedRoles = roles.slice(
                         const permissionCounts = countPermissions(role.permissions);
                         
                         return (
-                          <TableRow key={role.id}>
+                          <TableRow key={role.roles_id}>
                             <TableCell className="font-medium">
                               <div className="flex items-center gap-2">
                                 <div className="w-2 h-2 rounded-full bg-gray-900"></div>
-                                {role.name}
-                                {role.name === 'Administrator' && (
+                                {role.role_name}
+                                {role.role_name === 'Super Admin' && (
                                   <Badge className="bg-yellow-100 text-green-800 text-xs">
                                     Default
                                   </Badge>
@@ -969,7 +1250,7 @@ const paginatedRoles = roles.slice(
                               </div>
                             </TableCell>
                             <TableCell>
-                              <Badge variant="secondary">{role.userCount} users</Badge>
+                              <Badge variant="secondary">{role.role_count} users</Badge>
                             </TableCell>
                             <TableCell className="text-sm text-gray-500">
                               {role.createdAt}
@@ -980,15 +1261,15 @@ const paginatedRoles = roles.slice(
                                   variant="outline"
                                   size="sm"
                                   onClick={() => startEditingRole(role)}
-                                  disabled={role.name === 'Administrator'}
+                                  disabled={role.role_name === 'Super Admin'}
                                 >
                                   <Pencil className="w-4 h-4" />
                                 </Button>
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => handleDeleteRole(role.id)}
-                                  disabled={role.name === 'Administrator'}
+                                  onClick={() => handleDeleteRole(role.roles_id)}
+                                  disabled={role.role_name === 'Super Admin'}
                                   className="text-red-600 hover:text-red-700 hover:bg-red-50"
                                 >
                                   <Trash2 className="w-4 h-4" />

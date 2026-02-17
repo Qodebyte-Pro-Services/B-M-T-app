@@ -1,18 +1,100 @@
+"use client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { TrendingUp, Image as ImageIcon } from "lucide-react";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
-const topProducts = [
-  { id: 1, name: "Executive Blazer", sold: 142, revenue: "NGN 28,400", growth: "+24%", image: "https://images.unsplash.com/photo-1591047139829-d91aecb6caea?w=400&h=400&fit=crop", category: "Blazers" },
-  { id: 2, name: "Luxury Wool Trousers", sold: 118, revenue: "NGN 17,700", growth: "+18%", image: "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?w=400&h=400&fit=crop", category: "Pants" },
-  { id: 3, name: "Premium Dress Shirt", sold: 96, revenue: "NGN 14,400", growth: "+32%", image: "https://images.unsplash.com/photo-1602810318383-e386cc2a3ccf?w=400&h=400&fit=crop", category: "Shirts" },
-  { id: 4, name: "Designer Leather Belt", sold: 85, revenue: "NGN 8,500", growth: "+15%", image: "https://images.unsplash.com/photo-1584917865442-de89df76afd3?w=400&h=400&fit=crop", category: "Accessories" },
-  { id: 5, name: "Silk Pocket Square", sold: 73, revenue: "NGN 3,650", growth: "+28%", image: "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=400&h=400&fit=crop", category: "Accessories" },
-];
+type TopProduct = {
+  id: string;
+  name: string;
+  sold: number;
+  revenue: string;
+  growth: string;
+  image: string | null;
+  category: string;
+};
 
-export function TopProductsWidget() {
+type Variant = {
+  variant_id: string;
+  sku: string;
+  total_sold: string;
+  revenue_formatted: string;
+  growth: string;
+  image_url: string | null;
+  product: {
+    category: {
+      name: string;
+    };
+  };
+};
+
+
+export function TopProductsWidget({
+  dateRange = "this_month",
+}: {
+  dateRange?: string;
+}) {
+  const [products, setProducts] = useState<TopProduct[]>([]);
+  const [loading, setLoading] = useState(true);
+
+    const apiUrl =
+    process.env.NEXT_PUBLIC_API_BASE_URL || "https://primelabs.maskiadmin-management.com/api";
+
+    const imageUrl = process.env.NEXT_PUBLIC_IMAGE_BASE_URL || "https://api.bmtpossystem.com";
+
+  const getAuthToken = () => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("adminToken");
+    }
+    return null;
+  };
+
+  useEffect(() => {
+    const fetchTopProducts = async () => {
+      try {
+        setLoading(true);
+        const token = getAuthToken();
+        if (!token) return;
+
+        const res = await fetch(
+          `${apiUrl}/analytics/fast-selling-variants?limit=5&period=${dateRange}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        if (!res.ok) throw new Error("Failed to fetch fast-selling variants");
+
+        const data = await res.json();
+
+        const mapped: TopProduct[] =
+          data.top_selling_variants?.map((v: Variant) => ({
+            id: v.variant_id,
+            name: v.sku || "Unnamed Product",
+            sold: v.total_sold,
+            revenue: v.revenue_formatted,
+            growth: v.growth,
+            image: v.image_url,
+            category: v.product?.category?.name ?? "Uncategorized",
+          })) || [];
+
+        setProducts(mapped);
+      } catch (err) {
+        console.error(err);
+        toast.error("Failed to load top products");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTopProducts();
+  }, [dateRange]);
   return (
     <Card className="bg-white backdrop-blur-sm border border-gray-100 shadow-2xl">
       <CardHeader className="pb-3">
@@ -27,8 +109,20 @@ export function TopProductsWidget() {
         </div>
       </CardHeader>
       <CardContent>
+     {loading && (
+          <p className="text-sm text-gray-500">Loading fast moving products...</p>
+        )}
+
+        {/* EMPTY */}
+        {!loading && products.length === 0 && (
+          <p className="text-sm text-gray-500">
+            No sales data for selected period
+          </p>
+        )}
+
+        {/* DATA */}
         <div className="space-y-4">
-          {topProducts.map((product, index) => (
+          {products.map((product, index) => (
             <div
               key={product.id}
               className="group flex flex-col md:flex-row gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors duration-200 items-center"
@@ -50,12 +144,11 @@ export function TopProductsWidget() {
               <div className="flex-shrink-0 w-16 h-16 rounded-md overflow-hidden bg-gray-100 border border-gray-200 group-hover:shadow-sm">
                 {product.image ? (
                   <Image
-                    src={product.image}
+                    src={`${imageUrl}${product.image}`}
                     alt={product.name}
                     width={64}
                     height={64}
                     className="w-full h-full object-cover"
-                    unoptimized
                   />
                 ) : (
                   <div className="w-full h-full flex items-center justify-center bg-gray-100">
@@ -97,11 +190,11 @@ export function TopProductsWidget() {
                 <div className="flex-1 h-1.5 bg-gray-200 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-green-500 rounded-full"
-                    style={{ width: `${(index + 1) / topProducts.length * 100}%` }}
+                    style={{ width: `${(index + 1) / products.length * 100}%` }}
                   />
                 </div>
                 <span className="text-xs text-gray-500 font-medium">
-                  Top {Math.round(((topProducts.length - index) / topProducts.length) * 100)}%
+                  Top {Math.round(((products.length - index) / products.length) * 100)}%
                 </span>
               </div>
             </div>

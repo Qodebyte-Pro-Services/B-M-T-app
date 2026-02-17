@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Edit, Trash2, MoreVertical, ImageIcon } from "lucide-react";
+import { Edit, Trash2, MoreVertical, ImageIcon, Loader } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,6 +15,17 @@ import {
 import { EditVariantModal } from './EditVariantModal';
 import { EditVariantImagesModal } from './EditVariantImages';
 import { ProductVariant } from '@/app/utils/type';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { toast } from 'sonner';
 
 
 interface VariantsTabProps {
@@ -22,10 +33,16 @@ interface VariantsTabProps {
   productId: string;
 }
 
-export function VariantsTab({ variants, productId }: VariantsTabProps) {
- const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
+export function VariantsTab({ variants: initialVariants, productId }: VariantsTabProps) {
+  const [variants, setVariants] = useState<ProductVariant[]>(initialVariants);
+  const [selectedVariant, setSelectedVariant] = useState<ProductVariant | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showImagesModal, setShowImagesModal] = useState(false);
+   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [variantToDelete, setVariantToDelete] = useState<ProductVariant | null>(null);
+  const [openRowId, setOpenRowId] = useState<string | number | null>(null);
+    const [deletingId, setDeletingId] = useState<string | null>(null);
+
 
 const getStockStatus = (quantity: number, threshold: number) => {
   if (quantity === 0) {
@@ -51,8 +68,65 @@ const getStockStatus = (quantity: number, threshold: number) => {
     setShowImagesModal(true);
   };
 
-const [openRowId, setOpenRowId] = useState<string | number | null>(null);
+   const handleDeleteClick = (variant: ProductVariant, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setVariantToDelete(variant);
+    setShowDeleteDialog(true);
+  };
 
+  const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://primelabs.maskiadmin-management.com/api';
+  const getToken = () => localStorage.getItem('adminToken');
+
+  const handleConfirmDelete = async () => {
+    if (!variantToDelete) return;
+
+    setDeletingId(variantToDelete.id);
+    try {
+      const token = getToken();
+
+      const response = await fetch(
+        `${apiUrl}/products/variants/${variantToDelete.id}`,
+        {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to delete variant');
+      }
+
+     
+      setVariants(prev => prev.filter(v => v.id !== variantToDelete.id));
+      setShowDeleteDialog(false);
+      setVariantToDelete(null);
+
+      toast.success(`Variant ${variantToDelete.sku} deleted successfully`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to delete variant';
+      toast.error(message);
+      console.error('Error deleting variant:', error);
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+    const handleVariantUpdate = (updatedVariant: ProductVariant) => {
+    setVariants(prev =>
+      prev.map(v => v.id === updatedVariant.id ? updatedVariant : v)
+    );
+    setSelectedVariant(null);
+  };
+
+  const handleVariantsSaved = (updatedVariant: ProductVariant) => {
+    setVariants(prev =>
+      prev.map(v => v.id === updatedVariant.id ? updatedVariant : v)
+    );
+  };
 
 
 
@@ -89,11 +163,12 @@ const [openRowId, setOpenRowId] = useState<string | number | null>(null);
   {variants.map((variant) => {
     const status = getStockStatus(variant.quantity, variant.threshold);
     const isOpen = openRowId === variant.id;
+         const isDeleting = deletingId === variant.id;
 
     return (
       <TableRow
         key={variant.id}
-        className="cursor-pointer"
+        className={`cursor-pointer ${isDeleting ? 'bg-red-100' : ''}`}
         onClick={() => setOpenRowId(variant.id === openRowId ? null : variant.id)}
       >
         <TableCell className="font-medium">{variant.sku}</TableCell>
@@ -129,10 +204,13 @@ const [openRowId, setOpenRowId] = useState<string | number | null>(null);
                 <ImageIcon className="h-4 w-4 mr-2" />
                 Edit Images
               </DropdownMenuItem>
-              <DropdownMenuItem className="text-red-600">
-                <Trash2 className="h-4 w-4 mr-2" />
-                Delete Variant
-              </DropdownMenuItem>
+              <DropdownMenuItem
+              className="text-red-600 cursor-pointer"
+              onClick={(e) => handleDeleteClick(variant, e)}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Delete Variant
+            </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </TableCell>
@@ -165,21 +243,76 @@ const [openRowId, setOpenRowId] = useState<string | number | null>(null);
         </CardContent>
       </Card>
 
+         <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent className="bg-white text-gray-900">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Variant</AlertDialogTitle>
+            <AlertDialogDescription>
+              {variantToDelete && (
+                <div>
+                  <p className="mb-3">
+                    Are you sure you want to delete this variant?
+                  </p>
+                  <div className="bg-gray-50 p-3 rounded-lg space-y-1 text-sm mb-4">
+                    <div>
+                      <span className="font-semibold text-gray-900">SKU:</span>
+                      <span className="ml-2 text-gray-600">{variantToDelete.sku}</span>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-gray-900">Quantity:</span>
+                      <span className="ml-2 text-gray-600">{variantToDelete.quantity} units</span>
+                    </div>
+                    <div>
+                      <span className="font-semibold text-gray-900">Cost Price:</span>
+                      <span className="ml-2 text-gray-600">NGN {variantToDelete.costPrice.toLocaleString()}</span>
+                    </div>
+                  </div>
+                  <p className="text-red-600 text-sm font-semibold">
+                    ⚠️ This action cannot be undone. All inventory logs associated with this variant will also be deleted.
+                  </p>
+                </div>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingId !== null} >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              className="bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+              disabled={deletingId !== null}
+            >
+              {deletingId !== null ? (
+                <>
+                  <Loader className="h-4 w-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                'Delete Variant'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
      
       {selectedVariant && (
         <EditVariantModal
           variant={selectedVariant}
           open={showEditModal}
           onOpenChange={setShowEditModal}
+          onSave={handleVariantUpdate}
         />
       )}
 
       
       {selectedVariant && (
-        <EditVariantImagesModal
+       <EditVariantImagesModal
           variant={selectedVariant}
           open={showImagesModal}
           onOpenChange={setShowImagesModal}
+          onSave={handleVariantsSaved}
         />
       )}
     </>
