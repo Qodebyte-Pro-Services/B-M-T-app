@@ -95,7 +95,7 @@ export interface Product {
     discount?: Discount;
 }
 
-export type CreateProductPayload = {
+export interface CreateProductPayload {
   name: string;
   brand: string;
   categoryId: string;
@@ -103,20 +103,9 @@ export type CreateProductPayload = {
   taxable: boolean;
   description: string;
   images: File[];
-
   hasVariations: boolean;
-
   baseSku: string;
-
-  productStock?: {
-    costPrice: number;
-    sellingPrice: number;
-    quantity: number;
-    threshold: number;
-    barcode: string;
-  };
-
-  variants?: {
+  variants: {
     name: string;
     sku: string;
     barcode: string;
@@ -126,7 +115,8 @@ export type CreateProductPayload = {
     threshold: number;
     images: File[];
   }[];
-};
+}
+
 
 export type ProductAttributeState = {
     id: string;

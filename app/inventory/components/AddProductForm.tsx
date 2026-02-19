@@ -15,8 +15,7 @@ import { toast } from 'sonner';
 import Image from 'next/image';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Attribute, Category, CreateProductPayload, ProductAttributeState } from '@/app/utils/type';
-import { is } from 'date-fns/locale';
-import { set } from 'zod';
+
 
 interface Variation {
   id: number;
@@ -29,36 +28,46 @@ interface Variation {
   threshold: number;
   images: File[];
 }
-
+interface ExcelVariant {
+  name: string;
+  sku: string;
+  barcode: string;
+  costPrice: number;
+  sellingPrice: number;
+  quantity: number;
+  threshold: number;
+  images?: string; 
+}
 type ExcelProductRow = {
   'Product Name': string;
   'Brand': string;
-  'Category ID': string;
+  'Category Name': string;  
   'Unit': string;
   'Taxable': string;
   'Description': string;
   'Has Variations': string;
   'Base SKU': string;
+  'Product Images'?: string; 
   'Variants'?: string;
-  'Product Stock'?: string;
 };
+
+
+const usedBarcodes = new Set<string>();
 
 const generateUniqueBarcode = (): string => {
   let barcode: string;
-  let isUnique = false;
-  const existingBarcodes = new Set<string>();
 
-  while (!isUnique) {
-    barcode = `PRD-${Date.now().toString().slice(-6)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
-    
-    if (!existingBarcodes.has(barcode)) {
-      isUnique = true;
-      existingBarcodes.add(barcode);
-    }
-  }
+  do {
+    barcode = `PRD-${Date.now().toString().slice(-6)}-${Math.random()
+      .toString(36)
+      .slice(2, 6)
+      .toUpperCase()}`;
+  } while (usedBarcodes.has(barcode));
 
-  return barcode!;
+  usedBarcodes.add(barcode);
+  return barcode;
 };
+
 
 
 function AttributeItem({
@@ -171,6 +180,13 @@ const [customBaseSku, setCustomBaseSku] = useState<string | null>(null);
 const [categories, setCategories] = useState<Category[]>([]);
 const [categoriesLoading, setCategoriesLoading] = useState(false);
 const [availableAttributes, setAvailableAttributes] = useState<Attribute[]>([]);
+const [bulkImages, setBulkImages] = useState<FileList | null>(null);
+  const [importReport, setImportReport] = useState<{
+  row: number;
+  productName: string;
+  status: "success" | "failed";
+  message?: string;
+}[]>([]);
 
 const [categoryId, setCategoryId] = useState<string>("");
 const [description, setDescription] = useState("");
@@ -282,6 +298,13 @@ useEffect(() => {
   fetchAttributes();
 }, []);
 
+const [uploadProgress, setUploadProgress] = useState({
+  current: 0,
+  total: 0,
+  isUploading: false,
+});
+
+
 useEffect(() => {
   if (!hasVariations) return;
   if (attributes.length > 0) return;
@@ -299,6 +322,8 @@ useEffect(() => {
 
 
   function handleExcelUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const createdProductIds: string[] = [];
+     const token = localStorage.getItem("adminToken"); 
      const file = e.target.files?.[0];
   if (!file) return;
 
@@ -309,21 +334,120 @@ useEffect(() => {
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
     const json = XLSX.utils.sheet_to_json(sheet);
-     for (const row of json) {
+    setUploadProgress({
+  current: 0,
+  total: json.length,
+  isUploading: true,
+});
+ const seenSkus = new Set<string>();
+   for (let i = 0; i < json.length; i++) {
+  const row = json[i];
+  const rowNumber = i + 2; 
          const productRow = row as ExcelProductRow;
-  const payload = {
-    name: productRow['Product Name'],
-    brand: productRow['Brand'],
-    categoryId: productRow['Category ID'],
-    unit: productRow['Unit'],
-    taxable: productRow['Taxable'] === 'Yes',
-    description: productRow['Description'],
-    images: [],
-    hasVariations: productRow['Has Variations'] === 'Yes',
-    baseSku: productRow['Base SKU'],
-    variants: productRow['Variants'] ? JSON.parse(productRow['Variants']) : [],
-    productStock: productRow['Product Stock'] ? JSON.parse(productRow['Product Stock']) : undefined,
-  };
+      
+         const category = categories.find(
+  c => c.name.toLowerCase() === productRow['Category Name']?.toLowerCase()
+);
+
+if (!category) {
+  toast.error(`Category "${productRow['Category Name']}" not found`);
+  continue;
+}
+
+
+const images: File[] = [];
+
+if (productRow['Product Images'] && bulkImages) {
+  productRow['Product Images']
+    .split(',')
+    .forEach(name => {
+      const file = Array.from(bulkImages).find(
+        f => f.name === name.trim()
+      );
+      if (file) images.push(file);
+    });
+}
+
+let parsedVariants: ExcelVariant[] = [];
+
+if (productRow['Variants']) {
+  try {
+    parsedVariants = JSON.parse(productRow['Variants']) as ExcelVariant[];
+  } catch {
+    toast.error(
+      `Invalid Variants JSON for "${productRow['Product Name']}"`
+    );
+    continue; 
+  }
+}
+
+const rowHasVariations = productRow['Has Variations'] === 'Yes';
+
+
+const variants: CreateProductPayload["variants"] =
+    rowHasVariations && parsedVariants.length > 0
+    ? parsedVariants.map((v: ExcelVariant) => {
+        const variantImages: File[] = [];
+
+        if (v.images && bulkImages) {
+          v.images.split(',').forEach(img => {
+            const file = Array.from(bulkImages).find(
+              f => f.name === img.trim()
+            );
+            if (file) variantImages.push(file);
+          });
+        }
+
+        return {
+          name: v.name || "Default",
+          sku: v.sku || productRow['Base SKU'],
+          barcode: v.barcode || generateUniqueBarcode(),
+          costPrice: v.costPrice ?? 0,
+          sellingPrice: v.sellingPrice ?? 0,
+          quantity: v.quantity ?? 0,
+          threshold: v.threshold ?? 0,
+          images: variantImages,
+        };
+      })
+    : [
+        {
+          name: "Default",
+          sku: productRow['Base SKU'],
+          barcode: generateUniqueBarcode(),
+          costPrice: 0,
+          sellingPrice: 0,
+          quantity: 0,
+          threshold: 0,
+          images: [],
+        },
+      ];
+
+
+
+variants.forEach(v => {
+        if (seenSkus.has(v.sku)) {
+          throw new Error(`Duplicate SKU in Excel: ${v.sku}`);
+        }
+        seenSkus.add(v.sku);
+      });
+
+
+
+
+
+const payload: CreateProductPayload = {
+  name: productRow['Product Name'],
+  brand: productRow['Brand'],
+  categoryId: category.id,
+  unit: productRow['Unit'],
+  taxable: productRow['Taxable'] === 'Yes',
+  description: productRow['Description'],
+  images,
+  hasVariations: rowHasVariations,
+  baseSku: productRow['Base SKU'],
+  variants,
+};
+
 
       try {
         const formData = buildProductFormData(payload);
@@ -345,11 +469,55 @@ useEffect(() => {
     }
 
     toast.success(`Product "${payload.name}" created 🎉`);
+     const data = await productRes.json();
+      createdProductIds.push(data.productId);
+      setImportReport(prev => [
+      ...prev,
+      {
+        row: rowNumber,
+        productName: payload.name,
+        status: "success",
+      },
+    ]);
       }catch (err) {
         console.error('Error creating product from Excel row:', err);
         toast.error(`Failed to create product: ${payload.name}`);
+
+
+        setImportReport(prev => [
+  ...prev,
+  {
+    row: rowNumber,
+    productName: productRow['Product Name'],
+    status: "failed",
+   message: err instanceof Error ? err.message : "Unknown error",
+  },
+]);
+for (const id of createdProductIds) {
+  await fetch(
+   
+    `${process.env.NEXT_PUBLIC_API_BASE_URL}/products/${id}`,
+    {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+}
+
+toast.error("Import failed. All created products were rolled back.");
+break;
       }
+            setUploadProgress(prev => ({
+  ...prev,
+  current: prev.current + 1,
+}));
       }
+      setUploadProgress(prev => ({
+  ...prev,
+  isUploading: false,
+}));
     };
     reader.readAsBinaryString(file);
   }
@@ -358,6 +526,14 @@ useEffect(() => {
   if (word.length <= 3) return word.toUpperCase();
   return word.slice(0, 4).toUpperCase();
 }
+
+const downloadErrorReport = () => {
+  const worksheet = XLSX.utils.json_to_sheet(importReport);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Import Report");
+  XLSX.writeFile(workbook, "import-report.xlsx");
+};
+
 
 function generateBaseSku(
   brand: string,
@@ -640,6 +816,55 @@ const syncVariations = () => {
   setVariations(prev => buildVariations(attributes, prev, baseSku));
 };
 
+const downloadExcelTemplate = () => {
+  const template = [
+    {
+      "Product Name": "Classic T-Shirt",
+      "Brand": "Nike",
+      "Category Name": "Clothing",
+      "Unit": "Pieces",
+      "Taxable": "Yes",
+      "Description": "Premium cotton t-shirt",
+      "Has Variations": "Yes",
+      "Base SKU": "NIKE-TSHIRT",
+      "Product Images": "shirt1.jpg,shirt2.jpg",
+      "Variants": JSON.stringify(
+        [
+          {
+            name: "Red-Large",
+            sku: "RED-LG-TSHIRT",
+            barcode: "BAR-001",
+            costPrice: 3000,
+            sellingPrice: 4500,
+            quantity: 20,
+            threshold: 5,
+            images: "red1.jpg,red2.jpg",
+          },
+        ],
+        null,
+        2
+      ),
+    },
+    {
+      "Product Name": "Plain Hoodie",
+      "Brand": "Adidas",
+      "Category Name": "Clothing",
+      "Unit": "Pieces",
+      "Taxable": "No",
+      "Description": "Winter hoodie",
+      "Has Variations": "No",
+      "Base SKU": "ADI-HOODIE",
+      "Product Images": "hoodie.jpg",
+      "Variants": "",
+    },
+  ];
+
+  const worksheet = XLSX.utils.json_to_sheet(template);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Products Template");
+
+  XLSX.writeFile(workbook, "product-bulk-upload-template.xlsx");
+};
 
 const removeVariant = (id: number) => {
   setVariations(prev => {
@@ -711,22 +936,31 @@ const handleVariantImageUpload = (id: number, files: FileList | null) => {
     };
   }
 
-  return {
-    name: productName,
-    brand,
-    categoryId,
-    unit,
-    taxable,
-    description,
-    images: productImages,
-    hasVariations: false,
-    baseSku,
+ return {
+  name: productName,
+  brand,
+  categoryId,
+  unit,
+  taxable,
+  description,
+  images: productImages,
+  hasVariations: false,
+  baseSku,
 
-productStock: {
-  ...singleStock,
-  barcode: singleBarcode,
-},
-  };
+  variants: [
+    {
+      name: "Default",
+      sku: baseSku,
+      barcode: singleBarcode || generateUniqueBarcode(),
+      costPrice: singleStock.costPrice,
+      sellingPrice: singleStock.sellingPrice,
+      quantity: singleStock.quantity,
+      threshold: singleStock.threshold,
+      images: [],
+    },
+  ],
+};
+
 };
 
 const buildProductFormData = (payload: CreateProductPayload) => {
@@ -751,52 +985,43 @@ const buildProductFormData = (payload: CreateProductPayload) => {
   }
 
 
-  if (payload.hasVariations && payload.variants) {
-     formData.append(
+  const validAttributes = attributes.filter(
+  a => a.name.trim() && a.values.length > 0
+);
+
+if (payload.hasVariations && validAttributes.length > 0) {
+  formData.append(
     "attributes",
     JSON.stringify(
-      attributes.map(a => ({
+      validAttributes.map(a => ({
         name: a.name,
         values: a.values,
       }))
     )
   );
-    const variantsWithoutImages = payload.variants.map(v => ({
+}
+
+
+formData.append(
+  "variants",
+  JSON.stringify(
+    payload.variants.map(v => ({
       sku: v.sku,
       barcode: v.barcode,
       cost_price: v.costPrice,
       selling_price: v.sellingPrice,
       quantity: v.quantity,
       threshold: v.threshold,
-    }));
+    }))
+  )
+);
 
-   
+payload.variants.forEach((variant, index) => {
+  variant.images.forEach(file => {
+    formData.append(`variants[${index}][image_url]`, file);
+  });
+});
 
-    formData.append("variants", JSON.stringify(variantsWithoutImages));
-
-    payload.variants.forEach((variant, index) => {
-      variant.images.forEach(file => {
-        formData.append(`variants[${index}][image_url]`, file);
-      });
-    });
-  }
-
- 
-  if (!payload.hasVariations && payload.productStock) {
-    formData.append(
-      "variants",
-      JSON.stringify([
-        {
-          sku: payload.baseSku,
-          barcode: payload.productStock.barcode,
-          cost_price: payload.productStock.costPrice,
-          selling_price: payload.productStock.sellingPrice,
-          quantity: payload.productStock.quantity,
-          threshold: payload.productStock.threshold,
-        },
-      ])
-    );
-  }
 
   return formData;
 };
@@ -812,6 +1037,16 @@ const buildProductFormData = (payload: CreateProductPayload) => {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <Button onClick={downloadErrorReport} variant="outline">
+          Download Import Report
+        </Button>
+        {uploadProgress.isUploading && (
+  <div className="flex items-center gap-3 mt-3 text-sm text-gray-700">
+    <Loader className="h-4 w-4 animate-spin" />
+    Uploading {uploadProgress.current} / {uploadProgress.total}
+  </div>
+)}
+
           <Button
   className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white"
   asChild
@@ -826,7 +1061,27 @@ const buildProductFormData = (payload: CreateProductPayload) => {
       onChange={handleExcelUpload}
     />
   </label>
+          </Button>
+
+          <Button
+  variant="outline"
+  className="ml-2"
+  onClick={downloadExcelTemplate}
+>
+  Download Excel Template
 </Button>
+          <label className="flex items-center gap-2 cursor-pointer mt-2">
+            <ImageIcon className="h-4 w-4" />
+            Bulk Images
+            <input
+              type="file"
+              multiple
+              accept="image/*"
+              className="hidden"
+              onChange={e => setBulkImages(e.target.files)}
+            />
+          </label>
+          
           <div className="space-y-6">
        
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -1348,6 +1603,7 @@ const buildProductFormData = (payload: CreateProductPayload) => {
       }
 
       toast.success("Product created successfully 🎉");
+     
       resetForm();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Unknown error");
