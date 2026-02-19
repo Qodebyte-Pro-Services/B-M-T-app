@@ -120,6 +120,18 @@ const [installmentPlan, setInstallmentPlan] = useState<InstallmentPlan>({
 });
 
 useEffect(() => {
+  if (
+    paymentMethod !== 'split' &&
+    !(paymentMethod === 'credit' && creditType === 'full')
+  ) {
+    setAmountPaid(netTotal.toFixed(2));
+  }
+  if (paymentMethod === 'credit' && creditType === 'full') {
+    setAmountPaid('0');
+  }
+}, [paymentMethod, creditType, netTotal]);
+
+useEffect(() => {
   setInstallmentPlan(prev => ({
     ...prev,
     customer: customer,
