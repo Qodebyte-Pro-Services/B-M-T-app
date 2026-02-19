@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
+import * as XLSX from 'xlsx';
 import { Plus, Trash2, Image as ImageIcon, Hash,Layers, RefreshCw, Loader } from "lucide-react";
 import { toast } from 'sonner';
 import Image from 'next/image';
@@ -29,6 +29,19 @@ interface Variation {
   threshold: number;
   images: File[];
 }
+
+type ExcelProductRow = {
+  'Product Name': string;
+  'Brand': string;
+  'Category ID': string;
+  'Unit': string;
+  'Taxable': string;
+  'Description': string;
+  'Has Variations': string;
+  'Base SKU': string;
+  'Variants'?: string;
+  'Product Stock'?: string;
+};
 
 const generateUniqueBarcode = (): string => {
   let barcode: string;
@@ -285,6 +298,61 @@ useEffect(() => {
 }, [availableAttributes, hasVariations]);
 
 
+  function handleExcelUpload(e: React.ChangeEvent<HTMLInputElement>) {
+     const file = e.target.files?.[0];
+  if (!file) return;
+
+     const reader = new FileReader();
+    reader.onload = async (evt) => {
+       const data = evt.target?.result;
+    const workbook = XLSX.read(data, { type: 'binary' });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const json = XLSX.utils.sheet_to_json(sheet);
+     for (const row of json) {
+         const productRow = row as ExcelProductRow;
+  const payload = {
+    name: productRow['Product Name'],
+    brand: productRow['Brand'],
+    categoryId: productRow['Category ID'],
+    unit: productRow['Unit'],
+    taxable: productRow['Taxable'] === 'Yes',
+    description: productRow['Description'],
+    images: [],
+    hasVariations: productRow['Has Variations'] === 'Yes',
+    baseSku: productRow['Base SKU'],
+    variants: productRow['Variants'] ? JSON.parse(productRow['Variants']) : [],
+    productStock: productRow['Product Stock'] ? JSON.parse(productRow['Product Stock']) : undefined,
+  };
+
+      try {
+        const formData = buildProductFormData(payload);
+    const token = localStorage.getItem("adminToken");
+    if (!token) throw new Error("No authentication token found");
+
+    const productRes = await fetch(
+      `${process.env.NEXT_PUBLIC_API_BASE_URL}/products/with-variants`,
+      {
+        method: "POST",
+        body: formData,
+        headers: { Authorization: `Bearer ${token}` },
+      }
+    );
+
+    if (!productRes.ok) {
+      const err = await productRes.json();
+      throw new Error(err.message || "Failed to create product");
+    }
+
+    toast.success(`Product "${payload.name}" created 🎉`);
+      }catch (err) {
+        console.error('Error creating product from Excel row:', err);
+        toast.error(`Failed to create product: ${payload.name}`);
+      }
+      }
+    };
+    reader.readAsBinaryString(file);
+  }
 
     function abbreviateWord(word: string): string {
   if (word.length <= 3) return word.toUpperCase();
@@ -744,6 +812,21 @@ const buildProductFormData = (payload: CreateProductPayload) => {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <Button
+  className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white"
+  asChild
+>
+  <label>
+    <Plus className="h-4 w-4" />
+    Bulk Upload (Excel)
+    <input
+      type="file"
+      accept=".xlsx,.xls"
+      className="hidden"
+      onChange={handleExcelUpload}
+    />
+  </label>
+</Button>
           <div className="space-y-6">
        
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
