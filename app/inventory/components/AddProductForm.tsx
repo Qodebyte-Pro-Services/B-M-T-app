@@ -167,7 +167,6 @@ const validateExcelStructure = (data: Record<string, unknown>[], availableCatego
     'Taxable',
     'Description',
     'Has Variations',
-    'Base SKU',
   ];
 
   const errors: ValidationError[] = [];
@@ -654,11 +653,54 @@ useEffect(() => {
           ...prev,
           isUploading: true,
           currentStatus: 'validating' as const,
-          detailedMessage: 'Validating Excel structure...',
+          detailedMessage: 'Auto-creating missing categories...',
           startTime: Date.now(),
         }));
 
-        const validation = validateExcelStructure(json, categories);
+    
+        const missingCategories = new Set<string>();
+        json.forEach(row => {
+          const categoryName = String((row as Record<string, unknown>)['Category Name'] || '').trim();
+          if (categoryName && !categories.some(c => c.name.toLowerCase() === categoryName.toLowerCase())) {
+            missingCategories.add(categoryName);
+          }
+        });
+
+        let updatedCategories = [...categories];
+        if (missingCategories.size > 0) {
+          for (const categoryName of missingCategories) {
+            try {
+              const createRes = await fetch(
+                `${process.env.NEXT_PUBLIC_API_BASE_URL}/configure/categories`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                  },
+                  body: JSON.stringify({ name: categoryName }),
+                }
+              );
+              if (createRes.ok) {
+                const created = await createRes.json();
+                updatedCategories = [created, ...updatedCategories];
+                setCategories(prev => [created, ...prev]);
+                toast.success(`Auto-created category: ${categoryName}`);
+              }
+            } catch (err) {
+              console.warn(`⚠️ Failed to auto-create category: ${categoryName}`, err);
+            }
+          }
+        }
+
+     
+        setUploadProgress(prev => ({
+          ...prev,
+          currentStatus: 'validating' as const,
+          detailedMessage: 'Validating Excel structure...',
+        }));
+
+        const validation = validateExcelStructure(json, updatedCategories);
         if (!validation.isValid) {
           setValidationErrors(validation.errors);
           setShowValidationDialog(true);
@@ -670,7 +712,6 @@ useEffect(() => {
           setValidationErrors(validation.errors);
         }
 
-      
         const duplicates = detectDuplicates(json);
         if (duplicates.skus.size > 0 || duplicates.names.size > 0) {
           const dupErrors: ValidationError[] = [];
@@ -692,48 +733,6 @@ useEffect(() => {
         if (cancelUploadRef.current) {
           setUploadProgress(prev => ({ ...prev, isUploading: false }));
           return;
-        }
-
-    
-        const missingCategories = new Set<string>();
-        json.forEach(row => {
-          const categoryName = String((row as Record<string, unknown>)['Category Name'] || '').trim();
-          if (categoryName && !categories.some(c => c.name.toLowerCase() === categoryName.toLowerCase())) {
-            missingCategories.add(categoryName);
-          }
-        });
-
-      
-        if (missingCategories.size > 0) {
-          setUploadProgress(prev => ({
-            ...prev,
-            isUploading: true,
-            currentStatus: 'validating' as const,
-            detailedMessage: 'Auto-creating missing categories...',
-          }));
-          
-          for (const categoryName of missingCategories) {
-            try {
-              const createRes = await fetch(
-                `${process.env.NEXT_PUBLIC_API_BASE_URL}/configure/categories`,
-                {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`,
-                  },
-                  body: JSON.stringify({ name: categoryName }),
-                }
-              );
-              if (createRes.ok) {
-                const created = await createRes.json();
-                setCategories(prev => [created, ...prev]);
-                toast.success(`Auto-created category: ${categoryName}`);
-              }
-            } catch (err) {
-              console.warn(`⚠️ Failed to auto-create category: ${categoryName}`, err);
-            }
-          }
         }
 
         setUploadProgress({
@@ -778,31 +777,10 @@ useEffect(() => {
               throw new Error(`Row ${rowNumber}: Category Name is empty or missing`);
             }
 
-            let category = categories.find(
+          
+            const category = updatedCategories.find(
               c => c.name.toLowerCase() === categoryName.toLowerCase()
             );
-
-            if (!category && missingCategories.has(categoryName)) {
-              try {
-                const createRes = await fetch(
-                  `${process.env.NEXT_PUBLIC_API_BASE_URL}/configure/categories`,
-                  {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      Authorization: `Bearer ${token}`,
-                    },
-                    body: JSON.stringify({ name: productRow['Category Name'] }),
-                  }
-                );
-                if (createRes.ok) {
-                  category = await createRes.json();
-                  setCategories(prev => [category!, ...prev]);
-                }
-              } catch {
-                throw new Error(`Failed to auto-create category: ${categoryName}`);
-              }
-            }
 
             if (!category) {
               throw new Error(`Category "${categoryName}" not found`);
