@@ -47,8 +47,229 @@ type ExcelProductRow = {
   'Description': string;
   'Has Variations': string;
   'Base SKU': string;
+  'Cost Price'?: string;
+  'Selling Price'?: string;
+  'Quantity'?: string;
+  'Threshold'?: string;
+  'Barcode'?: string;
   'Product Images'?: string; 
   'Variants'?: string;
+};
+
+// New type definitions for enhanced features
+interface ValidationError {
+  row?: number;
+  column?: string;
+  message: string;
+  type: 'error' | 'warning';
+}
+
+interface ImportRowResult {
+  rowNumber: number;
+  productName: string;
+  status: 'success' | 'failed' | 'skipped';
+  message?: string;
+  warning?: string;
+}
+
+interface ColumnMapping {
+  [key: string]: string;
+}
+
+interface ExcelValidationResult {
+  isValid: boolean;
+  errors: ValidationError[];
+  suggestedMapping?: ColumnMapping;
+}
+
+interface MissingImagesInfo {
+  rowNumber: number;
+  productName: string;
+  missingImages: string[];
+}
+
+interface BulkImageCategory {
+  fileName: string;
+  category: 'product' | 'variant' | 'both';
+}
+
+interface ApiResponse {
+  message?: string;
+  product?: {
+    id: string | number;
+    image_url?: string[];
+    [key: string]: unknown;
+  };
+  productId?: string | number;
+  variants?: Array<{
+    id: string | number;
+    image_url?: string[];
+    [key: string]: unknown;
+  }>;
+  [key: string]: unknown;
+}
+
+// Fuzzy string matching for filenames
+const calculateLevenshteinDistance = (a: string, b: string): number => {
+  const aLower = a.toLowerCase();
+  const bLower = b.toLowerCase();
+  const matrix: number[][] = [];
+
+  for (let i = 0; i <= bLower.length; i++) {
+    matrix[i] = [i];
+  }
+
+  for (let j = 0; j <= aLower.length; j++) {
+    matrix[0][j] = j;
+  }
+
+  for (let i = 1; i <= bLower.length; i++) {
+    for (let j = 1; j <= aLower.length; j++) {
+      if (bLower.charAt(i - 1) === aLower.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        );
+      }
+    }
+  }
+
+  return matrix[bLower.length][aLower.length];
+};
+
+const fuzzyMatchFilename = (
+  searchName: string,
+  availableFiles: File[],
+  threshold: number = 2
+): File | undefined => {
+  const matches = availableFiles
+    .map(file => ({
+      file,
+      distance: calculateLevenshteinDistance(searchName, file.name),
+    }))
+    .filter(({ distance }) => distance <= threshold)
+    .sort((a, b) => a.distance - b.distance);
+
+  return matches.length > 0 ? matches[0].file : undefined;
+};
+
+// Validation helper functions
+const validateExcelStructure = (data: Record<string, unknown>[], availableCategories: Category[]): ExcelValidationResult => {
+  const requiredColumns = [
+    'Product Name',
+    'Brand',
+    'Category Name',
+    'Unit',
+    'Taxable',
+    'Description',
+    'Has Variations',
+    'Base SKU',
+  ];
+
+  const errors: ValidationError[] = [];
+
+  if (!data || data.length === 0) {
+    return {
+      isValid: false,
+      errors: [{ message: 'Excel file is empty or invalid', type: 'error' }],
+    };
+  }
+
+  // Check required columns
+  const firstRow = data[0];
+  const actualColumns = Object.keys(firstRow || {});
+  const missingColumns = requiredColumns.filter(col => !actualColumns.includes(col));
+
+  if (missingColumns.length > 0) {
+    errors.push({
+      column: missingColumns.join(', '),
+      message: `Missing required columns: ${missingColumns.join(', ')}`,
+      type: 'error',
+    });
+  }
+
+  // Check for empty rows
+  const emptyRows: number[] = [];
+  data.forEach((row, idx) => {
+    const values = Object.values(row);
+    if (!values.some(v => v && String(v).trim())) {
+      emptyRows.push(idx + 2);
+    }
+  });
+
+  if (emptyRows.length > 0) {
+    errors.push({
+      message: `Found ${emptyRows.length} empty rows at: ${emptyRows.slice(0, 5).join(', ')}${emptyRows.length > 5 ? '...' : ''}`,
+      type: 'warning',
+    });
+  }
+
+  // Check for invalid categories
+  data.forEach((row, idx) => {
+    const categoryName = (row as Record<string, unknown>)['Category Name'];
+    if (categoryName && !availableCategories.some(c => c.name.toLowerCase() === String(categoryName).toLowerCase())) {
+      errors.push({
+        row: idx + 2,
+        message: `Category "${categoryName}" not found in system`,
+        type: 'error',
+      });
+    }
+  });
+
+  return {
+    isValid: errors.filter(e => e.type === 'error').length === 0,
+    errors,
+  };
+};
+
+const detectDuplicates = (data: Record<string, unknown>[]): { skus: Map<string, number[]>; names: Map<string, number[]> } => {
+  const skuMap = new Map<string, number[]>();
+  const nameMap = new Map<string, number[]>();
+
+  data.forEach((row, idx) => {
+    const baseSku = String((row as Record<string, unknown>)['Base SKU'] || '').trim();
+    const productName = String((row as Record<string, unknown>)['Product Name'] || '').trim();
+
+    if (baseSku) {
+      skuMap.set(baseSku, [...(skuMap.get(baseSku) || []), idx + 2]);
+    }
+    if (productName) {
+      nameMap.set(productName, [...(nameMap.get(productName) || []), idx + 2]);
+    }
+  });
+
+  return {
+    skus: new Map(Array.from(skuMap).filter(([, rows]) => rows.length > 1)),
+    names: new Map(Array.from(nameMap).filter(([, rows]) => rows.length > 1)),
+  };
+};
+
+const validateVariantJSON = (variantString: string): { isValid: boolean; parsed?: ExcelVariant[]; error?: string } => {
+  try {
+    const parsed = JSON.parse(variantString) as ExcelVariant[];
+    if (!Array.isArray(parsed)) {
+      return { isValid: false, error: 'Variants must be a JSON array' };
+    }
+
+    const requiredFields = ['sku', 'costPrice', 'sellingPrice', 'quantity', 'threshold'];
+    for (const variant of parsed) {
+      for (const field of requiredFields) {
+        if (!(field in variant)) {
+          return { isValid: false, error: `Missing required field in variant: ${field}` };
+        }
+      }
+    }
+
+    return { isValid: true, parsed };
+  } catch (err) {
+    return {
+      isValid: false,
+      error: err instanceof Error ? err.message : 'Invalid JSON format',
+    };
+  }
 };
 
 
@@ -169,70 +390,87 @@ export default function AddProductForm() {
   const [variations, setVariations] = useState<Variation[]>([]);
   const [hasVariations, setHasVariations] = useState(false);
   const [variantsGenerated, setVariantsGenerated] = useState(false);
- const [productImages, setProductImages] = useState<File[]>([]);
-const [attributes, setAttributes] = useState<ProductAttributeState[]>([]);
+  const [productImages, setProductImages] = useState<File[]>([]);
+  const [attributes, setAttributes] = useState<ProductAttributeState[]>([]);
   const [isCreating, setIsCreating] = useState(false);
 
-    const [productName, setProductName] = useState<string>("");
-const [brand, setBrand] = useState<string>("");
+  const [productName, setProductName] = useState<string>("");
+  const [brand, setBrand] = useState<string>("");
 
-const [customBaseSku, setCustomBaseSku] = useState<string | null>(null);
-const [categories, setCategories] = useState<Category[]>([]);
-const [categoriesLoading, setCategoriesLoading] = useState(false);
-const [availableAttributes, setAvailableAttributes] = useState<Attribute[]>([]);
-const [bulkImages, setBulkImages] = useState<FileList | null>(null);
-  const [importReport, setImportReport] = useState<{
-  row: number;
-  productName: string;
-  status: "success" | "failed";
-  message?: string;
-}[]>([]);
+  const [customBaseSku, setCustomBaseSku] = useState<string | null>(null);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(false);
+  const [availableAttributes, setAvailableAttributes] = useState<Attribute[]>([]);
+  const [bulkImages, setBulkImages] = useState<FileList | null>(null);
+  const [bulkImageCategories, setBulkImageCategories] = useState<BulkImageCategory[]>([]);
+  const [importReport, setImportReport] = useState<ImportRowResult[]>([]);
 
-const [categoryId, setCategoryId] = useState<string>("");
-const [description, setDescription] = useState("");
-const [taxable, setTaxable] = useState(false);
-const [unit, setUnit] = useState("Pieces");
-const [categoryModalOpen, setCategoryModalOpen] = useState(false);
-const [newCategoryName, setNewCategoryName] = useState("");
+  const [categoryId, setCategoryId] = useState<string>("");
+  const [description, setDescription] = useState("");
+  const [taxable, setTaxable] = useState(false);
+  const [unit, setUnit] = useState("Pieces");
+  const [categoryModalOpen, setCategoryModalOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
   const [singleBarcode, setSingleBarcode] = useState<string>("");
   const imageInputRef = useRef<HTMLInputElement | null>(null);
+  const excelInputRef = useRef<HTMLInputElement | null>(null);
+  const bulkImagesInputRef = useRef<HTMLInputElement | null>(null);
 
   const [singleStock, setSingleStock] = useState({
-  costPrice: 0,
-  sellingPrice: 0,
-  quantity: 0,
-  threshold: 0,
-});
+    costPrice: 0,
+    sellingPrice: 0,
+    quantity: 0,
+    threshold: 0,
+  });
 
+  // New state for enhanced features
+  const [uploadProgress, setUploadProgress] = useState({
+    current: 0,
+    total: 0,
+    isUploading: false,
+    currentStatus: 'validating' as 'validating' | 'processing' | 'uploading' | 'completed',
+    detailedMessage: 'Preparing upload...',
+    startTime: 0,
+    estimatedTime: 0,
+  });
+
+  const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
+  const [showValidationDialog, setShowValidationDialog] = useState(false);
+  const cancelUploadRef = useRef(false);
+  const [missingImages, setMissingImages] = useState<MissingImagesInfo[]>([]);
+  const [failedRows, setFailedRows] = useState<Record<string, unknown>[]>([]);
+  const [autoCreateCategories, setAutoCreateCategories] = useState(false);
+  const [showAutoCreateDialog, setShowAutoCreateDialog] = useState(false);
+  const [categoriesToCreate, setCategoriesToCreate] = useState<string[]>([]);
 
   useEffect(() => {
-  const fetchCategories = async () => {
-    try {
-       const token = localStorage.getItem('adminToken');
+    const fetchCategories = async () => {
+      try {
+        const token = localStorage.getItem('adminToken');
         if (!token) {
           throw new Error('No authentication token found');
         }
-      setCategoriesLoading(true);
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_BASE_URL}/configure/categories`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-             'Content-Type': 'application/json',
-          },
-        }
-      );
-      const data = await res.json();
-      setCategories(data);
-    } catch {
-      toast.error("Failed to load categories");
-    } finally {
-      setCategoriesLoading(false);
-    }
-  };
+        setCategoriesLoading(true);
+        const res = await fetch(
+          `${process.env.NEXT_PUBLIC_API_BASE_URL}/configure/categories`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+        const data = await res.json();
+        setCategories(data);
+      } catch {
+        toast.error("Failed to load categories");
+      } finally {
+        setCategoriesLoading(false);
+      }
+    };
 
-  fetchCategories();
-}, []);
+    fetchCategories();
+  }, []);
 
 const handleCreateCategory = async () => {
   if (isCreating) return;
@@ -298,13 +536,6 @@ useEffect(() => {
   fetchAttributes();
 }, []);
 
-const [uploadProgress, setUploadProgress] = useState({
-  current: 0,
-  total: 0,
-  isUploading: false,
-});
-
-
 useEffect(() => {
   if (!hasVariations) return;
   if (attributes.length > 0) return;
@@ -318,209 +549,569 @@ useEffect(() => {
       values: attr.values?.map(v => v.value) ?? [],
     }))
   );
-}, [availableAttributes, hasVariations]);
+}, [availableAttributes, hasVariations, attributes.length]);
 
-
-  function handleExcelUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleExcelUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    cancelUploadRef.current = false;
     const createdProductIds: string[] = [];
-     const token = localStorage.getItem("adminToken"); 
-     const file = e.target.files?.[0];
-  if (!file) return;
-
-     const reader = new FileReader();
-    reader.onload = async (evt) => {
-       const data = evt.target?.result;
-    const workbook = XLSX.read(data, { type: 'binary' });
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    const json = XLSX.utils.sheet_to_json(sheet);
-    setUploadProgress({
-  current: 0,
-  total: json.length,
-  isUploading: true,
-});
- const seenSkus = new Set<string>();
-   for (let i = 0; i < json.length; i++) {
-  const row = json[i];
-  const rowNumber = i + 2; 
-         const productRow = row as ExcelProductRow;
-      
-         const category = categories.find(
-  c => c.name.toLowerCase() === productRow['Category Name']?.toLowerCase()
-);
-
-if (!category) {
-  toast.error(`Category "${productRow['Category Name']}" not found`);
-  continue;
-}
-
-
-const images: File[] = [];
-
-if (productRow['Product Images'] && bulkImages) {
-  productRow['Product Images']
-    .split(',')
-    .forEach(name => {
-      const file = Array.from(bulkImages).find(
-        f => f.name === name.trim()
-      );
-      if (file) images.push(file);
-    });
-}
-
-let parsedVariants: ExcelVariant[] = [];
-
-if (productRow['Variants']) {
-  try {
-    parsedVariants = JSON.parse(productRow['Variants']) as ExcelVariant[];
-  } catch {
-    toast.error(
-      `Invalid Variants JSON for "${productRow['Product Name']}"`
-    );
-    continue; 
-  }
-}
-
-const rowHasVariations = productRow['Has Variations'] === 'Yes';
-
-
-const variants: CreateProductPayload["variants"] =
-    rowHasVariations && parsedVariants.length > 0
-    ? parsedVariants.map((v: ExcelVariant) => {
-        const variantImages: File[] = [];
-
-        if (v.images && bulkImages) {
-          v.images.split(',').forEach(img => {
-            const file = Array.from(bulkImages).find(
-              f => f.name === img.trim()
-            );
-            if (file) variantImages.push(file);
-          });
-        }
-
-        return {
-          name: v.name || "Default",
-          sku: v.sku || productRow['Base SKU'],
-          barcode: v.barcode || generateUniqueBarcode(),
-          costPrice: v.costPrice ?? 0,
-          sellingPrice: v.sellingPrice ?? 0,
-          quantity: v.quantity ?? 0,
-          threshold: v.threshold ?? 0,
-          images: variantImages,
-        };
-      })
-    : [
-        {
-          name: "Default",
-          sku: productRow['Base SKU'],
-          barcode: generateUniqueBarcode(),
-          costPrice: 0,
-          sellingPrice: 0,
-          quantity: 0,
-          threshold: 0,
-          images: [],
-        },
-      ];
-
-
-
-variants.forEach(v => {
-        if (seenSkus.has(v.sku)) {
-          throw new Error(`Duplicate SKU in Excel: ${v.sku}`);
-        }
-        seenSkus.add(v.sku);
-      });
-
-
-
-
-
-const payload: CreateProductPayload = {
-  name: productRow['Product Name'],
-  brand: productRow['Brand'],
-  categoryId: category.id,
-  unit: productRow['Unit'],
-  taxable: productRow['Taxable'] === 'Yes',
-  description: productRow['Description'],
-  images,
-  hasVariations: rowHasVariations,
-  baseSku: productRow['Base SKU'],
-  variants,
-};
-
-
-      try {
-        const formData = buildProductFormData(payload);
     const token = localStorage.getItem("adminToken");
-    if (!token) throw new Error("No authentication token found");
-
-    const productRes = await fetch(
-      `${process.env.NEXT_PUBLIC_API_BASE_URL}/products/with-variants`,
-      {
-        method: "POST",
-        body: formData,
-        headers: { Authorization: `Bearer ${token}` },
-      }
-    );
-
-    if (!productRes.ok) {
-      const err = await productRes.json();
-      throw new Error(err.message || "Failed to create product");
+    const file = e.target.files?.[0];
+    
+    if (!file) {
+      toast.error('No file selected');
+      return;
     }
 
-    toast.success(`Product "${payload.name}" created 🎉`);
-     const data = await productRes.json();
-      createdProductIds.push(data.productId);
-      setImportReport(prev => [
-      ...prev,
-      {
-        row: rowNumber,
-        productName: payload.name,
-        status: "success",
-      },
-    ]);
-      }catch (err) {
-        console.error('Error creating product from Excel row:', err);
-        toast.error(`Failed to create product: ${payload.name}`);
+    // Log file info for debugging
+    console.log('File selected:', { name: file.name, size: file.size, type: file.type });
 
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const data = evt.target?.result;
+        
+        if (!data) {
+          throw new Error('Failed to read file');
+        }
 
-        setImportReport(prev => [
-  ...prev,
-  {
-    row: rowNumber,
-    productName: productRow['Product Name'],
-    status: "failed",
-   message: err instanceof Error ? err.message : "Unknown error",
-  },
-]);
-for (const id of createdProductIds) {
-  await fetch(
-   
-    `${process.env.NEXT_PUBLIC_API_BASE_URL}/products/${id}`,
-    {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    }
-  );
-}
+        const workbook = XLSX.read(data, { type: 'binary' });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        let json = XLSX.utils.sheet_to_json(sheet) as Record<string, unknown>[];
 
-toast.error("Import failed. All created products were rolled back.");
-break;
-      }
+        console.log('Raw Excel data (first row):', json[0]);
+        console.log('Total rows from Excel (including empty):', json.length);
+
+        if (!json || json.length === 0) {
+          throw new Error('Excel file is empty');
+        }
+
+        // Create array with original row numbers before filtering
+        let rowsWithNumbers = json.map((row, idx) => ({
+          data: row,
+          originalRowNum: idx + 2, // +2 because headers are row 1, data starts at row 2
+        }));
+
+        // Filter out completely empty rows
+        rowsWithNumbers = rowsWithNumbers.filter(item => {
+          const values = Object.values(item.data).filter(v => v !== null && v !== undefined && String(v).trim() !== '');
+          return values.length > 0;
+        });
+
+        console.log(`Total rows after filtering empty rows: ${rowsWithNumbers.length} (was ${json.length})`);
+
+        if (rowsWithNumbers.length === 0) {
+          throw new Error('No valid data rows found in Excel file');
+        }
+
+        // Re-create json array with filtered data and trim whitespace
+        json = rowsWithNumbers.map(item => {
+          const trimmedRow: Record<string, unknown> = {};
+          Object.entries(item.data).forEach(([key, value]) => {
+            trimmedRow[key.trim()] = typeof value === 'string' ? value.trim() : value;
+          });
+          return trimmedRow;
+        });
+
+        console.log('Processed data (first row):', json[0]);
+
+        // Feature #1: Pre-upload Validation
+        setUploadProgress(prev => ({
+          ...prev,
+          isUploading: true,
+          currentStatus: 'validating' as const,
+          detailedMessage: 'Validating Excel structure...',
+          startTime: Date.now(),
+        }));
+
+        const validation = validateExcelStructure(json, categories);
+        if (!validation.isValid) {
+          setValidationErrors(validation.errors);
+          setShowValidationDialog(true);
+          setUploadProgress(prev => ({ ...prev, isUploading: false }));
+          return;
+        }
+
+        if (validation.errors.length > 0) {
+          setValidationErrors(validation.errors);
+        }
+
+        // Feature #9: Duplicate Detection
+        const duplicates = detectDuplicates(json);
+        if (duplicates.skus.size > 0 || duplicates.names.size > 0) {
+          const dupErrors: ValidationError[] = [];
+          duplicates.skus.forEach((rows, sku) => {
+            dupErrors.push({
+              message: `Duplicate SKU "${sku}" found in rows: ${Array.from(rows).join(', ')}`,
+              type: 'warning',
+            });
+          });
+          duplicates.names.forEach((rows, name) => {
+            dupErrors.push({
+              message: `Duplicate product name "${name}" found in rows: ${Array.from(rows).join(', ')}`,
+              type: 'warning',
+            });
+          });
+          setValidationErrors(prev => [...prev, ...dupErrors]);
+        }
+
+        if (cancelUploadRef.current) {
+          setUploadProgress(prev => ({ ...prev, isUploading: false }));
+          return;
+        }
+
+        // Feature #7: Check for categories to create
+        const missingCategories = new Set<string>();
+        json.forEach(row => {
+          const categoryName = String((row as Record<string, unknown>)['Category Name'] || '').trim();
+          if (categoryName && !categories.some(c => c.name.toLowerCase() === categoryName.toLowerCase())) {
+            missingCategories.add(categoryName);
+          }
+        });
+
+        if (missingCategories.size > 0 && !autoCreateCategories) {
+          setCategoriesToCreate(Array.from(missingCategories));
+          setShowAutoCreateDialog(true);
+          setUploadProgress(prev => ({ ...prev, isUploading: false }));
+          return;
+        }
+
+        setUploadProgress({
+          current: 0,
+          total: json.length,
+          isUploading: true,
+          currentStatus: 'processing' as const,
+          detailedMessage: 'Processing products...',
+          startTime: Date.now(),
+          estimatedTime: 0,
+        });
+
+        const seenSkus = new Set<string>();
+        const barcodeSet = new Set<string>();
+        const failedRowsData: Record<string, unknown>[] = [];
+        let successCount = 0;
+
+        for (let i = 0; i < rowsWithNumbers.length; i++) {
+          if (cancelUploadRef.current) break;
+
+          const rowNumber = rowsWithNumbers[i].originalRowNum;
+          const row = rowsWithNumbers[i].data;
+          const productRow = row as ExcelProductRow;
+
+          // Update progress with ETA
+          const elapsed = Date.now() - uploadProgress.startTime;
+          const avgTimePerRow = elapsed / (i + 1);
+          const remainingRows = rowsWithNumbers.length - (i + 1);
+          const estimatedTime = avgTimePerRow * remainingRows;
+
+          setUploadProgress(prev => ({
+            ...prev,
+            current: i + 1,
+            estimatedTime,
+            detailedMessage: `Processing row ${rowNumber} (${i + 1}/${rowsWithNumbers.length}) - ETA: ${Math.ceil(estimatedTime / 1000)}s`,
+          }));
+
+          try {
+            // Feature #7: Auto-create missing category
+            const categoryName = String(productRow['Category Name'] || '').trim();
+            
+            if (!categoryName) {
+              throw new Error(`Row ${rowNumber}: Category Name is empty or missing`);
+            }
+
+            let category = categories.find(
+              c => c.name.toLowerCase() === categoryName.toLowerCase()
+            );
+
+            if (!category && missingCategories.has(categoryName)) {
+              try {
+                const createRes = await fetch(
+                  `${process.env.NEXT_PUBLIC_API_BASE_URL}/configure/categories`,
+                  {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({ name: productRow['Category Name'] }),
+                  }
+                );
+                if (createRes.ok) {
+                  category = await createRes.json();
+                  setCategories(prev => [category!, ...prev]);
+                }
+              } catch {
+                throw new Error(`Failed to auto-create category: ${categoryName}`);
+              }
+            }
+
+            if (!category) {
+              throw new Error(`Category "${categoryName}" not found`);
+            }
+
+            const images: File[] = [];
+
+            // Feature #3: Image Auto-matching Improvements
+            if (productRow['Product Images'] && bulkImages) {
+              const imageNames = productRow['Product Images'].split(',').map(n => n.trim());
+              const missingImagesList: string[] = [];
+
+              for (const imageName of imageNames) {
+                // Try exact match first (case-insensitive)
+                let file = Array.from(bulkImages).find(
+                  f => f.name.toLowerCase() === imageName.toLowerCase()
+                );
+
+                // Feature #3: Fuzzy matching for typos
+                if (!file) {
+                  file = fuzzyMatchFilename(imageName, Array.from(bulkImages));
+                }
+
+                if (file) {
+                  // Check if image is categorized for product usage
+                  const imageCategory = bulkImageCategories.find(ic => ic.fileName === file!.name);
+                  const category = imageCategory?.category || 'both';
+                  
+                  // Only add if marked for products or both
+                  if (category === 'product' || category === 'both') {
+                    images.push(file);
+                  } else {
+                    // If image is marked as variant-only, don't add to product images
+                    missingImagesList.push(`${imageName} (marked as variant-only)`);
+                  }
+                } else {
+                  missingImagesList.push(imageName);
+                }
+              }
+
+              if (missingImagesList.length > 0) {
+                setMissingImages(prev => [
+                  ...prev,
+                  {
+                    rowNumber,
+                    productName: productRow['Product Name'],
+                    missingImages: missingImagesList,
+                  },
+                ]);
+              }
+            }
+
+            let parsedVariants: ExcelVariant[] = [];
+
+            // Feature #4: Variant Validation
+            if (productRow['Variants']) {
+              const validation = validateVariantJSON(String(productRow['Variants']));
+              if (!validation.isValid) {
+                throw new Error(`Invalid Variants for row ${rowNumber}: ${validation.error}`);
+              }
+              parsedVariants = validation.parsed || [];
+
+              // Validate variant images exist
+              if (bulkImages && bulkImages.length > 0) {
+                const variantMissingImages: string[] = [];
+                for (const variant of parsedVariants) {
+                  if (variant.images) {
+                    const variantImageNames = variant.images.split(',').map(n => n.trim());
+                    for (const imgName of variantImageNames) {
+                      const exists = Array.from(bulkImages).some(
+                        f => f.name.toLowerCase() === imgName.toLowerCase()
+                      );
+                      if (!exists) {
+                        const fuzzy = fuzzyMatchFilename(imgName, Array.from(bulkImages));
+                        if (!fuzzy) {
+                          variantMissingImages.push(imgName);
+                        }
+                      }
+                    }
+                  }
+                }
+                
+                if (variantMissingImages.length > 0) {
+                  setMissingImages(prev => [
+                    ...prev,
+                    {
+                      rowNumber,
+                      productName: productRow['Product Name'],
+                      missingImages: variantMissingImages,
+                    },
+                  ]);
+                }
+              } else if (parsedVariants.some(v => v.images)) {
+                // No bulk images uploaded at all, just warn
+                const variantImageNames = parsedVariants
+                  .filter(v => v.images)
+                  .flatMap(v => v.images?.split(',').map(n => n.trim()) || []);
+                
+                setMissingImages(prev => [
+                  ...prev,
+                  {
+                    rowNumber,
+                    productName: productRow['Product Name'],
+                    missingImages: variantImageNames,
+                  },
+                ]);
+              }
+            }
+
+            const rowHasVariations = productRow['Has Variations'] === 'Yes';
+
+            const variants: CreateProductPayload['variants'] =
+              rowHasVariations && parsedVariants.length > 0
+                ? parsedVariants.map((v: ExcelVariant) => {
+                    const variantImages: File[] = [];
+
+                    if (v.images && bulkImages) {
+                      v.images.split(',').forEach(img => {
+                        const imageName = img.trim();
+                        let file = Array.from(bulkImages).find(
+                          f => f.name.toLowerCase() === imageName.toLowerCase()
+                        );
+                        if (!file) {
+                          file = fuzzyMatchFilename(imageName, Array.from(bulkImages));
+                        }
+                        if (file) {
+                        
+                          const imageCategory = bulkImageCategories.find(ic => ic.fileName === file!.name);
+                          const category = imageCategory?.category || 'both';
+                          
+                         
+                          if (category === 'variant' || category === 'both') {
+                            variantImages.push(file);
+                          }
+                        }
+                      });
+                    }
+
+                    return {
+                      name: v.name || 'Default',
+                      sku: v.sku || productRow['Base SKU'],
+                      barcode: v.barcode || generateUniqueBarcode(),
+                      costPrice: v.costPrice ?? 0,
+                      sellingPrice: v.sellingPrice ?? 0,
+                      quantity: v.quantity ?? 0,
+                      threshold: v.threshold ?? 0,
+                      images: variantImages,
+                    };
+                  })
+                : [
+                    {
+                      name: 'Default',
+                      sku: productRow['Base SKU'],
+                      barcode: (productRow['Barcode'] && productRow['Barcode'].trim()) 
+            ? productRow['Barcode'].trim()
+            : generateUniqueBarcode(),
+                      costPrice: productRow['Cost Price'] ? Number(productRow['Cost Price']) : 0,
+          sellingPrice: productRow['Selling Price'] ? Number(productRow['Selling Price']) : 0,
+          quantity: productRow['Quantity'] ? Number(productRow['Quantity']) : 0,
+          threshold: productRow['Threshold'] ? Number(productRow['Threshold']) : 0,
+                      images: images,
+                    },
+                  ];
+
+            // Check for duplicate SKUs and barcodes
+            variants.forEach(v => {
+              if (seenSkus.has(v.sku)) {
+                throw new Error(`Duplicate SKU: ${v.sku}`);
+              }
+              if (barcodeSet.has(v.barcode)) {
+                throw new Error(`Duplicate barcode: ${v.barcode}`);
+              }
+              seenSkus.add(v.sku);
+              barcodeSet.add(v.barcode);
+            });
+
+            const payload: CreateProductPayload = {
+              name: productRow['Product Name'],
+              brand: productRow['Brand'],
+              categoryId: category.id,
+              unit: productRow['Unit'],
+              taxable: productRow['Taxable'] === 'Yes',
+              description: productRow['Description'],
+              // Always send product images (images marked as "both" will appear on product AND variant)
+              images: images,
+              hasVariations: rowHasVariations,
+              baseSku: productRow['Base SKU'],
+              variants,
+            };
+
             setUploadProgress(prev => ({
-  ...prev,
-  current: prev.current + 1,
-}));
+              ...prev,
+              currentStatus: 'uploading' as const,
+              detailedMessage: `Uploading ${payload.name}...`,
+            }));
+
+            const formData = buildProductFormData(payload);
+            if (!token) throw new Error('No authentication token found');
+
+            console.log('Uploading product:', {
+              name: payload.name,
+              hasVariations: payload.hasVariations,
+              variantCount: payload.variants.length,
+              productImageCount: payload.images.length,
+              variantImages: payload.variants.map(v => ({ sku: v.sku, imageCount: v.images.length })),
+            });
+
+            const productRes = await fetch(
+              `${process.env.NEXT_PUBLIC_API_BASE_URL}/products/with-variants`,
+              {
+                method: 'POST',
+                body: formData,
+                headers: { Authorization: `Bearer ${token}` },
+              }
+            );
+
+            console.log('Upload response status:', productRes.status, productRes.statusText);
+
+            if (!productRes.ok) {
+              const err = await productRes.json();
+              console.error('Server error response:', err);
+              throw new Error(err.message || 'Failed to create product');
+            }
+
+            let responseData: ApiResponse = {};
+            try {
+              const responseText = await productRes.text();
+              console.log('Raw response text:', responseText);
+              
+              if (responseText) {
+                responseData = JSON.parse(responseText) as ApiResponse;
+              }
+            } catch (parseErr) {
+              console.error('Failed to parse response:', parseErr);
+              responseData = {};
+            }
+
+            console.log('Parsed response data:', responseData);
+
+            toast.success(`Product "${payload.name}" created 🎉`);
+            
+            // Extract product ID from nested response structure
+            const productId = responseData.product?.id || responseData.productId;
+            if (productId) {
+              createdProductIds.push(String(productId));
+              console.log('✅ Product saved with ID:', productId);
+            } else {
+              console.warn('⚠️ No product ID in response:', responseData);
+            }
+            
+            successCount++;
+            setImportReport(prev => [
+              ...prev,
+              {
+                rowNumber,
+                productName: payload.name,
+                status: 'success',
+              },
+            ]);
+          } catch (err) {
+            // Feature #2: Better Error Recovery - Skip failed row instead of rollback all
+            const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+            console.error(`❌ Error creating product at row ${rowNumber}:`, {
+              productName: productRow['Product Name'],
+              error: errorMessage,
+              fullError: err,
+            });
+            failedRowsData.push(productRow);
+            setImportReport(prev => [
+              ...prev,
+              {
+                rowNumber,
+                productName: productRow['Product Name'],
+                status: 'failed',
+                message: errorMessage,
+              },
+            ]);
+
+            toast.error(`Failed to create product at row ${rowNumber}: ${errorMessage}`);
+          }
+        }
+
+        // Feature #6: Save failed rows for retry
+        if (failedRowsData.length > 0) {
+          setFailedRows(failedRowsData);
+        }
+
+        // Feature #2: Partial success reporting
+        const totalProcessed = successCount + failedRowsData.length;
+        setUploadProgress(prev => ({
+          ...prev,
+          isUploading: false,
+          currentStatus: 'completed' as const,
+          detailedMessage: `Import completed: ${successCount}/${totalProcessed} products created successfully`,
+        }));
+
+        if (failedRowsData.length === 0) {
+          toast.success(`All ${successCount} products imported successfully! 🎉`);
+        } else {
+          toast.warning(
+            `Import completed: ${successCount} succeeded, ${failedRowsData.length} failed. Download failed rows to retry.`
+          );
+        }
+      } catch (err) {
+        console.error('Excel upload error:', err);
+        toast.error(err instanceof Error ? err.message : 'Unknown error during upload');
+        setUploadProgress(prev => ({ ...prev, isUploading: false }));
+      } finally {
+        // Clear the file input to allow re-uploading the same file
+        if (excelInputRef.current) {
+          excelInputRef.current.value = '';
+        }
       }
-      setUploadProgress(prev => ({
-  ...prev,
-  isUploading: false,
-}));
     };
+
     reader.readAsBinaryString(file);
   }
+
+  // Feature #6: Download failed rows
+  const downloadFailedRows = () => {
+    if (failedRows.length === 0) return;
+    const worksheet = XLSX.utils.json_to_sheet(failedRows);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Failed Rows');
+    XLSX.writeFile(workbook, 'failed-products.xlsx');
+  };
+
+  // Feature #3: Download missing images list
+  const downloadMissingImagesList = () => {
+    if (missingImages.length === 0) return;
+    const data = missingImages.map(item => ({
+      'Row Number': item.rowNumber,
+      'Product Name': item.productName,
+      'Missing Images': item.missingImages.join(', '),
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(data);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Missing Images');
+    XLSX.writeFile(workbook, 'missing-images.xlsx');
+  };
+
+  // Feature #7: Auto-create missing categories
+  const handleAutoCreateCategories = async () => {
+    if (!autoCreateCategories) return;
+    try {
+      for (const categoryName of categoriesToCreate) {
+        const res = await fetch(
+          `${process.env.NEXT_PUBLIC_API_BASE_URL}/configure/categories`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${localStorage.getItem('adminToken')}`,
+            },
+            body: JSON.stringify({ name: categoryName }),
+          }
+        );
+        if (res.ok) {
+          const created = await res.json();
+          setCategories(prev => [created, ...prev]);
+        }
+      }
+      setShowAutoCreateDialog(false);
+      toast.success(`${categoriesToCreate.length} categories created`);
+    } catch {
+      toast.error('Failed to create categories');
+    }
+  };
 
     function abbreviateWord(word: string): string {
   if (word.length <= 3) return word.toUpperCase();
@@ -816,29 +1407,91 @@ const syncVariations = () => {
   setVariations(prev => buildVariations(attributes, prev, baseSku));
 };
 
+// Handle bulk images selection with proper closure
+const handleBulkImagesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  try {
+    if (!e.target.files || e.target.files.length === 0) {
+      return;
+    }
+    
+    const newFiles = Array.from(e.target.files);
+    
+    const dataTransfer = new DataTransfer();
+    if (bulkImages) {
+      Array.from(bulkImages).forEach(file => dataTransfer.items.add(file));
+    }
+    newFiles.forEach(file => dataTransfer.items.add(file));
+    
+    setBulkImages(dataTransfer.files);
+    
+    setBulkImageCategories(prev => {
+      const updated = [...prev];
+      newFiles.forEach(file => {
+        if (!updated.find(ic => ic.fileName === file.name)) {
+          updated.push({ fileName: file.name, category: 'both' });
+        }
+      });
+      return updated;
+    });
+
+    // ✅ Reset so same files can be selected again - do this LAST
+    e.target.value = '';
+    
+  } catch (err) {
+    console.error('Error handling bulk images:', err);
+    toast.error('Error uploading images');
+  }
+};
+
 const downloadExcelTemplate = () => {
-  const template = [
+  // Feature #8: Enhanced Template with better examples
+ const template = [
     {
       "Product Name": "Classic T-Shirt",
       "Brand": "Nike",
       "Category Name": "Clothing",
       "Unit": "Pieces",
       "Taxable": "Yes",
-      "Description": "Premium cotton t-shirt",
+      "Description": "Premium cotton t-shirt with crew neck",
       "Has Variations": "Yes",
       "Base SKU": "NIKE-TSHIRT",
+      "Cost Price": "",
+      "Selling Price": "",
+      "Quantity": "",
+      "Threshold": "",
+      "Barcode": "",
       "Product Images": "shirt1.jpg,shirt2.jpg",
       "Variants": JSON.stringify(
         [
           {
+            name: "Red-Small",
+            sku: "RED-SM-TSHIRT",
+            barcode: "BAR-RED-SM",
+            costPrice: 2500,
+            sellingPrice: 4000,
+            quantity: 30,
+            threshold: 5,
+            images: "red-small.jpg",
+          },
+          {
             name: "Red-Large",
             sku: "RED-LG-TSHIRT",
-            barcode: "BAR-001",
+            barcode: "BAR-RED-LG",
             costPrice: 3000,
             sellingPrice: 4500,
             quantity: 20,
             threshold: 5,
-            images: "red1.jpg,red2.jpg",
+            images: "red-large.jpg",
+          },
+          {
+            name: "Blue-Small",
+            sku: "BLUE-SM-TSHIRT",
+            barcode: "BAR-BLUE-SM",
+            costPrice: 2500,
+            sellingPrice: 4000,
+            quantity: 25,
+            threshold: 5,
+            images: "blue-small.jpg",
           },
         ],
         null,
@@ -851,17 +1504,193 @@ const downloadExcelTemplate = () => {
       "Category Name": "Clothing",
       "Unit": "Pieces",
       "Taxable": "No",
-      "Description": "Winter hoodie",
+      "Description": "Warm winter hoodie with zip closure",
       "Has Variations": "No",
       "Base SKU": "ADI-HOODIE",
-      "Product Images": "hoodie.jpg",
+      "Cost Price": "3500",
+      "Selling Price": "5500",
+      "Quantity": "50",
+      "Threshold": "10",
+      "Barcode": "BAR-HOODIE-001",
+      "Product Images": "hoodie1.jpg,hoodie2.jpg",
+      "Variants": "",
+    },
+    {
+      "Product Name": "Sports Shoes",
+      "Brand": "Puma",
+      "Category Name": "Footwear",
+      "Unit": "Pairs",
+      "Taxable": "Yes",
+      "Description": "Lightweight running shoes with cushioning",
+      "Has Variations": "Yes",
+      "Base SKU": "PUMA-SHOES",
+      "Cost Price": "",
+      "Selling Price": "",
+      "Quantity": "",
+      "Threshold": "",
+      "Barcode": "",
+      "Product Images": "shoes1.jpg",
+      "Variants": JSON.stringify(
+        [
+          {
+            name: "Size-7",
+            sku: "PUMA-SHOES-7",
+            barcode: "BAR-SHOES-7",
+            costPrice: 4000,
+            sellingPrice: 6500,
+            quantity: 15,
+            threshold: 3,
+            images: "",
+          },
+          {
+            name: "Size-9",
+            sku: "PUMA-SHOES-9",
+            barcode: "BAR-SHOES-9",
+            costPrice: 4000,
+            sellingPrice: 6500,
+            quantity: 18,
+            threshold: 3,
+            images: "",
+          },
+        ],
+        null,
+        2
+      ),
+    },
+    {
+      "Product Name": "Basic Cotton Socks",
+      "Brand": "Puma",
+      "Category Name": "Accessories",
+      "Unit": "Pairs",
+      "Taxable": "Yes",
+      "Description": "Comfortable everyday socks",
+      "Has Variations": "No",
+      "Base SKU": "PUMA-SOCKS",
+      "Cost Price": "500",
+      "Selling Price": "1000",
+      "Quantity": "200",
+      "Threshold": "20",
+      "Barcode": "BAR-SOCKS-001",
+      "Product Images": "socks1.jpg",
       "Variants": "",
     },
   ];
 
-  const worksheet = XLSX.utils.json_to_sheet(template);
+ const worksheet = XLSX.utils.json_to_sheet(template);
+  
+  // Add validation hints and column info (Feature #8)
+  const instructionsSheet = XLSX.utils.json_to_sheet([
+    {
+      Column: "Product Name",
+      Required: "Yes",
+      Type: "Text",
+      "Notes": "Name of the product",
+      "Example": "Classic T-Shirt",
+    },
+    {
+      Column: "Brand",
+      Required: "Yes",
+      Type: "Text",
+      "Notes": "Brand name",
+      "Example": "Nike",
+    },
+    {
+      Column: "Category Name",
+      Required: "Yes",
+      Type: "Text",
+      "Notes": "Must exist in system or will be auto-created",
+      "Example": "Clothing, Footwear, Electronics",
+    },
+    {
+      Column: "Unit",
+      Required: "Yes",
+      Type: "Text",
+      "Notes": "Unit of measurement",
+      "Example": "Pieces, Pairs, Kg, Meters",
+    },
+    {
+      Column: "Taxable",
+      Required: "Yes",
+      Type: "Yes/No",
+      "Notes": "Is product taxable?",
+      "Example": "Yes or No",
+    },
+    {
+      Column: "Description",
+      Required: "Yes",
+      Type: "Text",
+      "Notes": "Product description",
+      "Example": "Premium quality with...",
+    },
+    {
+      Column: "Has Variations",
+      Required: "Yes",
+      Type: "Yes/No",
+      "Notes": "Does product have variants? (Color, Size, etc.)",
+      "Example": "Yes or No",
+    },
+    {
+      Column: "Base SKU",
+      Required: "Yes",
+      Type: "Text",
+      "Notes": "Base stock keeping unit (must be unique)",
+      "Example": "NIKE-TSHIRT",
+    },
+    {
+      Column: "Cost Price",
+      Required: "Conditional",
+      Type: "Number",
+      "Notes": "Only for products WITHOUT variations (Has Variations = No)",
+      "Example": "2500",
+    },
+    {
+      Column: "Selling Price",
+      Required: "Conditional",
+      Type: "Number",
+      "Notes": "Only for products WITHOUT variations (Has Variations = No)",
+      "Example": "5500",
+    },
+    {
+      Column: "Quantity",
+      Required: "Conditional",
+      Type: "Number",
+      "Notes": "Only for products WITHOUT variations (Has Variations = No)",
+      "Example": "50",
+    },
+    {
+      Column: "Threshold",
+      Required: "Conditional",
+      Type: "Number",
+      "Notes": "Low stock threshold - Only for products WITHOUT variations",
+      "Example": "10",
+    },
+    {
+      Column: "Barcode",
+      Required: "Conditional",
+      Type: "Text",
+      "Notes": "Optional. Auto-generated if not provided. Only for products WITHOUT variations",
+      "Example": "BAR-HOODIE-001",
+    },
+    {
+      Column: "Product Images",
+      Required: "No",
+      Type: "Text",
+      "Notes": "Comma-separated filenames (must upload files in bulk images)",
+      "Example": "shirt1.jpg,shirt2.jpg",
+    },
+    {
+      Column: "Variants",
+      Required: "Conditional",
+      Type: "JSON Array",
+      "Notes": "Only if 'Has Variations' = Yes. Array with name, sku, barcode, costPrice, sellingPrice, quantity, threshold, images",
+      "Example": '[{"name":"Red-L","sku":"RED-TSHIRT","barcode":"...","costPrice":2500,"sellingPrice":4000,"quantity":30,"threshold":5,"images":"red.jpg"}]',
+    },
+  ]);
+
+
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "Products Template");
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Template Examples");
+  XLSX.utils.book_append_sheet(workbook, instructionsSheet, "Column Guide");
 
   XLSX.writeFile(workbook, "product-bulk-upload-template.xlsx");
 };
@@ -975,7 +1804,7 @@ const buildProductFormData = (payload: CreateProductPayload) => {
   formData.append("taxable", String(payload.taxable));
   formData.append("hasVariation", JSON.stringify(payload.hasVariations));
 
-  
+  // Add product images
   if (payload.images.length > 0) {
     formData.append("product_main_image", payload.images[0]);
 
@@ -984,44 +1813,57 @@ const buildProductFormData = (payload: CreateProductPayload) => {
     });
   }
 
-
   const validAttributes = attributes.filter(
-  a => a.name.trim() && a.values.length > 0
-);
-
-if (payload.hasVariations && validAttributes.length > 0) {
-  formData.append(
-    "attributes",
-    JSON.stringify(
-      validAttributes.map(a => ({
-        name: a.name,
-        values: a.values,
-      }))
-    )
+    a => a.name.trim() && a.values.length > 0
   );
-}
 
+  if (payload.hasVariations && validAttributes.length > 0) {
+    formData.append(
+      "attributes",
+      JSON.stringify(
+        validAttributes.map(a => ({
+          name: a.name,
+          values: a.values,
+        }))
+      )
+    );
+  }
 
-formData.append(
-  "variants",
-  JSON.stringify(
-    payload.variants.map(v => ({
-      sku: v.sku,
-      barcode: v.barcode,
-      cost_price: v.costPrice,
-      selling_price: v.sellingPrice,
-      quantity: v.quantity,
-      threshold: v.threshold,
-    }))
-  )
-);
+  // Build variants JSON without images (images are sent separately)
+  const variantsJson = payload.variants.map(v => ({
+    sku: v.sku,
+    barcode: v.barcode,
+    cost_price: v.costPrice,
+    selling_price: v.sellingPrice,
+    quantity: v.quantity,
+    threshold: v.threshold,
+  }));
 
-payload.variants.forEach((variant, index) => {
-  variant.images.forEach(file => {
-    formData.append(`variants[${index}][image_url]`, file);
+  formData.append("variants", JSON.stringify(variantsJson));
+
+  // Add variant images separately
+  let variantImageCount = 0;
+  payload.variants.forEach((variant, index) => {
+    if (variant.images && variant.images.length > 0) {
+      variant.images.forEach((file) => {
+        console.log(`Adding variant image: variants[${index}][image_url] = ${file.name}`);
+        formData.append(`variants[${index}][image_url]`, file);
+        variantImageCount++;
+      });
+    }
   });
-});
 
+  console.log('FormData prepared with:',{
+    productImages: payload.images.length,
+    variants: payload.variants.length,
+    totalVariantImages: variantImageCount,
+    variantDetails: payload.variants.map((v, i) => ({ 
+      variantIndex: i, 
+      sku: v.sku, 
+      imageCount: v.images.length,
+      imageNames: v.images.map(img => img.name)
+    })),
+  });
 
   return formData;
 };
@@ -1058,6 +1900,8 @@ payload.variants.forEach((variant, index) => {
         <Plus className="h-4 w-4" />
         Bulk Upload (Excel)
         <input
+          key={importReport.length}
+          ref={excelInputRef}
           type="file"
           accept=".xlsx,.xls"
           className="hidden"
@@ -1075,26 +1919,316 @@ payload.variants.forEach((variant, index) => {
       Download Excel Template
     </Button>
 
-    <label className="flex items-center gap-2 cursor-pointer bg-white border border-gray-300 rounded px-3 py-2 hover:bg-gray-100 transition">
+<Button
+  onClick={(e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    bulkImagesInputRef.current?.click();
+  }}
+  variant="secondary"
+  className="flex items-center gap-2"
+>
       <ImageIcon className="h-4 w-4" />
-      Bulk Images
-      <input
-        type="file"
-        multiple
-        accept="image/*"
-        className="hidden"
-        onChange={e => setBulkImages(e.target.files)}
-      />
-    </label>
+      {bulkImages && bulkImages.length > 0 ? (
+        <>
+          Add More Images
+          <span className="bg-blue-500 text-white text-xs rounded-full px-2 py-1">
+            {bulkImages.length} selected
+          </span>
+        </>
+      ) : (
+        <>
+          Select Bulk Images
+          <span className="text-xs text-gray-500 ml-auto">(multiple)</span>
+        </>
+      )}
+    </Button>
+<input
+  ref={bulkImagesInputRef}
+  type="file"
+  multiple
+  accept="image/*"
+  className="hidden"
+  onChange={handleBulkImagesChange}
+/>
 
     {uploadProgress.isUploading && (
-      <div className="flex items-center gap-2 ml-auto text-sm text-blue-700 font-medium">
-        <Loader className="h-4 w-4 animate-spin" />
-        Uploading {uploadProgress.current} / {uploadProgress.total}
+      <div className="flex items-center gap-3 ml-auto">
+        <div className="text-sm text-blue-700 font-medium">
+          <div className="flex items-center gap-2">
+            <Loader className="h-4 w-4 animate-spin" />
+            {uploadProgress.currentStatus.charAt(0).toUpperCase() + uploadProgress.currentStatus.slice(1)}
+          </div>
+          <div className="text-xs text-gray-600 mt-1">{uploadProgress.detailedMessage}</div>
+          <div className="w-32 h-2 bg-gray-200 rounded-full mt-2 overflow-hidden">
+            <div
+              className="h-full bg-blue-500 transition-all"
+              style={{
+                width: `${uploadProgress.total > 0 ? (uploadProgress.current / uploadProgress.total) * 100 : 0}%`,
+              }}
+            />
+          </div>
+        </div>
+        <Button
+          variant="destructive"
+          size="sm"
+          onClick={() => {
+            cancelUploadRef.current = true;
+          }}
+        >
+          Cancel
+        </Button>
       </div>
+    )}
+
+    {failedRows.length > 0 && !uploadProgress.isUploading && (
+      <Button
+        onClick={downloadFailedRows}
+        className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white"
+      >
+        <Loader className="h-4 w-4" />
+        Download Failed Rows
+      </Button>
+    )}
+
+    {missingImages.length > 0 && !uploadProgress.isUploading && (
+      <Button
+        onClick={downloadMissingImagesList}
+        className="flex items-center gap-2 bg-yellow-500 hover:bg-yellow-600 text-white"
+      >
+        <ImageIcon className="h-4 w-4" />
+        Missing Images ({missingImages.length})
+      </Button>
     )}
   </div>
 </div>
+
+{/* Debug: Show image count if bulkImages exists */}
+{bulkImages && bulkImages.length > 0 && (
+  <div className="bg-green-100 border border-green-500 p-2 rounded text-sm text-green-800 mt-4">
+    ✓ {bulkImages.length} image(s) loaded in state
+  </div>
+)}
+
+{/* Bulk Images Preview Section */}
+{bulkImages && bulkImages.length > 0 && (
+  <Card className="bg-white border-2 border-gray-900 rounded-2xl shadow-lg mt-8">
+    <CardHeader>
+      <div className="flex items-center justify-between">
+        <div>
+          <CardTitle className="text-gray-900">Uploaded Bulk Images</CardTitle>
+          <CardDescription className="text-gray-600">
+            {bulkImages.length} image{bulkImages.length !== 1 ? 's' : ''} - Click buttons to categorize each image
+          </CardDescription>
+        </div>
+        <Button
+          variant="destructive"
+          size="sm"
+          onClick={() => {
+            setBulkImages(null);
+            setBulkImageCategories([]);
+            if (bulkImagesInputRef.current) {
+              bulkImagesInputRef.current.value = '';
+            }
+          }}
+        >
+          Clear All
+        </Button>
+      </div>
+    </CardHeader>
+    <CardContent>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+        {Array.from(bulkImages).map((file, index) => {
+          const imageCategory = bulkImageCategories.find(ic => ic.fileName === file.name);
+          const category = imageCategory?.category || 'both';
+          
+          return (
+            <div key={index} className="flex flex-col gap-2">
+              <div className="relative group">
+                <div className="aspect-square rounded-lg overflow-hidden bg-gray-100 border-2 border-gray-300">
+                  <Image
+                    width={150}
+                    height={150}
+                    src={URL.createObjectURL(file)}
+                    alt={file.name}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center">
+                  <Button
+                    size="icon"
+                    variant="destructive"
+                    className="h-6 w-6"
+                    onClick={() => {
+                      if (bulkImages) {
+                        const dataTransfer = new DataTransfer();
+                        Array.from(bulkImages).forEach((f, i) => {
+                          if (i !== index) {
+                            dataTransfer.items.add(f);
+                          }
+                        });
+                        setBulkImages(dataTransfer.files);
+                        setBulkImageCategories(prev => 
+                          prev.filter(ic => ic.fileName !== file.name)
+                        );
+                      }
+                    }}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              </div>
+              <div className="text-xs text-gray-700 truncate" title={file.name}>
+                {file.name}
+              </div>
+              <div className="flex flex-col gap-1 text-xs">
+                <Button
+                  variant={category === 'product' ? 'default' : 'outline'}
+                  size="sm"
+                  className="h-7 text-xs text-black font-medium"
+                  onClick={() => 
+                    setBulkImageCategories(prev => {
+                      const updated = prev.filter(ic => ic.fileName !== file.name);
+                      updated.push({ fileName: file.name, category: 'product' });
+                      return updated;
+                    })
+                  }
+                >
+                  📦 Product
+                </Button>
+                <Button
+                  variant={category === 'variant' ? 'default' : 'outline'}
+                  size="sm"
+                  className="h-7 text-xs text-black font-medium"
+                  onClick={() => 
+                    setBulkImageCategories(prev => {
+                      const updated = prev.filter(ic => ic.fileName !== file.name);
+                      updated.push({ fileName: file.name, category: 'variant' });
+                      return updated;
+                    })
+                  }
+                >
+                  🎨 Variant
+                </Button>
+                <Button
+                  variant={category === 'both' ? 'default' : 'outline'}
+                  size="sm"
+                  className="h-7 text-xs text-black font-medium"
+                  onClick={() => 
+                    setBulkImageCategories(prev => {
+                      const updated = prev.filter(ic => ic.fileName !== file.name);
+                      updated.push({ fileName: file.name, category: 'both' });
+                      return updated;
+                    })
+                  }
+                >
+                  ✨ Both
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+        <p className="text-sm text-blue-900">
+          <strong>📖 How to use:</strong> Click buttons to specify each image&apos;s purpose:
+        </p>
+        <ul className="text-xs text-blue-800 mt-2 space-y-1 ml-4 list-disc">
+          <li><strong>📦 Product:</strong> Only use for product images in Excel</li>
+          <li><strong>🎨 Variant:</strong> Only use for variant images in Excel</li>
+          <li><strong>✨ Both:</strong> Can be used for both product and variant (default)</li>
+        </ul>
+      </div>
+    </CardContent>
+  </Card>
+)}
+
+{/* Feature #1: Validation Errors Dialog */}
+<Dialog open={showValidationDialog} onOpenChange={setShowValidationDialog}>
+  <DialogContent className="max-w-2xl max-h-96 overflow-y-auto bg-white text-gray-900">
+    <DialogHeader>
+      <DialogTitle className="text-red-600">Validation Errors Found</DialogTitle>
+    </DialogHeader>
+    <div className="space-y-3">
+      {validationErrors.map((error, idx) => (
+        <div
+          key={idx}
+          className={`p-3 rounded border-l-4 ${
+            error.type === 'error'
+              ? 'border-red-500 bg-red-50'
+              : 'border-yellow-500 bg-yellow-50'
+          }`}
+        >
+          <div className="font-medium text-sm">
+            {error.type === 'error' ? '✗ Error' : '⚠ Warning'}
+            {error.row && ` (Row ${error.row})`}
+            {error.column && ` - ${error.column}`}
+          </div>
+          <div className="text-sm text-gray-700 mt-1">{error.message}</div>
+        </div>
+      ))}
+    </div>
+    <DialogFooter>
+      <Button
+        onClick={() => setShowValidationDialog(false)}
+        className="bg-gray-900 text-white hover:bg-gray-800"
+      >
+        Close
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+
+{/* Feature #7: Auto-create Categories Dialog */}
+<Dialog open={showAutoCreateDialog} onOpenChange={setShowAutoCreateDialog}>
+  <DialogContent className="bg-white text-gray-900">
+    <DialogHeader>
+      <DialogTitle>Create Missing Categories?</DialogTitle>
+    </DialogHeader>
+    <div className="space-y-3">
+      <p className="text-sm text-gray-700">
+        The following categories don&apos;t exist in the system. Do you want to create them automatically?
+      </p>
+      <div className="bg-gray-50 p-3 rounded max-h-32 overflow-y-auto">
+        {categoriesToCreate.map((cat, idx) => (
+          <div key={idx} className="text-sm text-gray-800 py-1">
+            • {cat}
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center gap-2">
+        <Checkbox
+          id="autoCreate"
+          checked={autoCreateCategories}
+          onCheckedChange={(checked) => setAutoCreateCategories(Boolean(checked))}
+        />
+        <Label htmlFor="autoCreate" className="text-sm cursor-pointer">
+          Auto-create categories and proceed
+        </Label>
+      </div>
+    </div>
+    <DialogFooter>
+      <Button
+        variant="outline"
+        onClick={() => setShowAutoCreateDialog(false)}
+      >
+        Cancel
+      </Button>
+      <Button
+        onClick={() => {
+          if (autoCreateCategories) {
+            handleAutoCreateCategories();
+          } else {
+            setShowAutoCreateDialog(false);
+          }
+        }}
+        className="bg-gray-900 text-white hover:bg-gray-800"
+      >
+        {autoCreateCategories ? 'Create & Continue' : 'Proceed Without'}
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
           
           <div className="space-y-6">
        
