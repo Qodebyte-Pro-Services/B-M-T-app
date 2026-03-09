@@ -82,7 +82,7 @@ export function ProductFilters({
           throw new Error('No authentication token found');
         }
 
-        const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://primelabs.maskiadmin-management.com/api';
+       const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://primelabs.maskiadmin-management.com/api';
 
       
         const categoriesResponse = await fetch(`${apiUrl}/configure/categories`, {
@@ -144,60 +144,74 @@ export function ProductFilters({
     fetchFilterOptions();
   }, [products]);
 
-  // Filter variants based on selected filters
+ 
   useEffect(() => {
     if (!variants.length) return;
 
     let filteredVariants = [...variants];
 
-    // Filter by product
+
     if (selectedProduct && selectedProduct !== 'all') {
       filteredVariants = filteredVariants.filter(
         v => String(v.product_id) === selectedProduct
       );
     }
 
-    // Filter by brand
+
     if (selectedBrand && selectedBrand !== 'all') {
       filteredVariants = filteredVariants.filter(
         v => v.brand === selectedBrand
       );
     }
 
-    // Filter by category
+  
     if (selectedCategory && selectedCategory !== 'all') {
-      filteredVariants = filteredVariants.filter(
-        v => v.category === selectedCategory
-      );
+      const selectedCatTrimmed = String(selectedCategory).toLowerCase().trim();
+      filteredVariants = filteredVariants.filter(v => {
+        const variantCatTrimmed = String(v.category || '').toLowerCase().trim();
+        return variantCatTrimmed === selectedCatTrimmed;
+      });
     }
 
-    // Filter by search query
+
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       filteredVariants = filteredVariants.filter(v => {
-        const categoryName = typeof v.category === 'string' ? v.category : '';
         return (
           v.sku.toLowerCase().includes(query) ||
           v.barcode.toLowerCase().includes(query) ||
           v.product_name.toLowerCase().includes(query) ||
           v.brand.toLowerCase().includes(query) ||
-          categoryName.toLowerCase().includes(query)
+          String(v.category || '').toLowerCase().includes(query)
         );
       });
     }
 
-    // Call parent callback with filtered variants
+
     onVariantsChange?.(filteredVariants);
   }, [variants, selectedProduct, selectedBrand, selectedCategory, searchQuery, onVariantsChange]);
 
   const productsToDisplay = fetchedProducts.length > 0 ? fetchedProducts : products;
   const displayBrands = brands.length > 0 ? brands : Array.from(new Set(products.map(p => p.brand).filter(Boolean))) as string[];
-  const displayCategories = categories.length > 0
-    ? categories
-    : Array.from(new Set(products.map(p => typeof p.category === 'string' ? p.category : p.category?.name))).map((cat, idx) => ({
-      id: idx,
-      name: cat as string,
-    }));
+  
+
+  const variantCategories = Array.from(
+    new Set(
+      variants
+        .map(v => {
+          if (!v.category) return null;
+          const trimmed = String(v.category).trim();
+          return trimmed && trimmed !== '' ? trimmed : null;
+        })
+        .filter((cat): cat is string => cat !== null)
+    )
+  ).sort() as string[];
+  
+
+  const displayCategories = variantCategories.map((cat, idx) => ({ 
+    id: `cat-${idx}`, 
+    name: cat 
+  }));
 
   const isLoading = loadingFilters || variantsLoading;
 

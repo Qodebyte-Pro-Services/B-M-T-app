@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { BarcodeScanner } from './components/BarcodeScanner';
 import { useProducts } from './components/useProduct';
-import { VariantWithProduct } from './components/useVariants';
+import { useVariants, VariantWithProduct } from './components/useVariants';
 import { useDiscounts } from './components/useDiscount';
 import { useOfflineSync } from './components/useOfflineSync';
 import { useWalkInCustomer } from './components/useWalkInCustomer';
@@ -43,8 +43,11 @@ export default function POSPage() {
   const [isScannerProcessing, setIsScannerProcessing] = useState<boolean>(false);
   const [filteredVariants, setFilteredVariants] = useState<VariantWithProduct[]>([]);
   const [adminData, setAdminData] = useState<AdminData | null>(null);
+    const [allVariants, setAllVariants] = useState<VariantWithProduct[]>([]);
+
 
   const { products } = useProducts();
+    const { variants: variantsFromHook } = useVariants();
   const { getDiscountForProduct, isDiscountActive } = useDiscounts();
   const { walkInCustomer, refetchWalkInCustomer } = useWalkInCustomer();
   const { refetch: refetchCustomers } = useCustomers();
@@ -104,6 +107,10 @@ const calculateManualDiscount = () => {
     }
     setIsHydrated(true);
   }, []);
+
+    useEffect(() => {
+    setAllVariants(variantsFromHook);
+  }, [variantsFromHook]);
 
   const handleTaxRateChange = (newRate: number) => {
     setTaxRate(newRate);
@@ -310,7 +317,8 @@ const finalTotal = Math.max(0, calculateTotal() - totalDiscount);
     setIsScannerProcessing(true);
     
     try {
-      const variant = filteredVariants.find(v => v.barcode === barcode);
+       const trimmedBarcode = barcode.trim().toLowerCase();
+      const variant = allVariants.find(v => v.barcode.trim().toLowerCase() === trimmedBarcode);
       
       if (!variant) {
         toast.error(`Barcode not found: ${barcode}`);
