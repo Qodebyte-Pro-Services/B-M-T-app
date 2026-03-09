@@ -57,8 +57,19 @@ export function ProductTable({ searchQuery }: { searchQuery: string }) {
   const [categories, setCategories] = useState<string[]>(["All"]);
   const [openRowId, setOpenRowId] = useState<number | null>(null);
    const [deletingId, setDeletingId] = useState<number | null>(null);
+      const [debouncedQuery, setDebouncedQuery] = useState(searchQuery);
   const limit = 10;
 
+   useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedQuery]);
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -72,16 +83,18 @@ export function ProductTable({ searchQuery }: { searchQuery: string }) {
         }
 
         const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://primelabs.maskiadmin-management.com/api';
-        const response = await fetch(
-          `${apiUrl}/products?page=${currentPage}&limit=${limit}`,
-          {
-            headers: {
-              'Authorization': `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-          }
-        );
+         let url = `${apiUrl}/products?page=${currentPage}&limit=${limit}`;
+        
+        if (debouncedQuery.trim()) {
+          url += `&search=${encodeURIComponent(debouncedQuery)}`;
+        }
 
+        const response = await fetch(url, {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
         if (!response.ok) {
           throw new Error('Failed to fetch products');
         }
@@ -105,7 +118,7 @@ export function ProductTable({ searchQuery }: { searchQuery: string }) {
     };
 
     fetchProducts();
-  }, [currentPage]);
+  }, [currentPage, debouncedQuery]);
 
  
   const formatCurrency = (value: number) => {
@@ -147,17 +160,10 @@ export function ProductTable({ searchQuery }: { searchQuery: string }) {
   };
 
 
- 
-  const filteredProducts = products.filter(product => {
-    const matchesCategory =
-      activeCategory === "All" || product.category?.name === activeCategory;
+const filteredProducts = products.filter(product =>
+  activeCategory === "All" || product.category?.name === activeCategory
+);
 
-    const matchesSearch =
-      product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      product.brand.toLowerCase().includes(searchQuery.toLowerCase());
-
-    return matchesCategory && matchesSearch;
-  });
 
   const handleDelete = (productId: number, productName: string) => {
   toast.custom((toastId) => (
