@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
-import {Clock, User} from "lucide-react";
-import { AdminData, CartItem, Customer, Draft, Product, ProductVariant } from '../utils/type';
+import {Clock, LogOut, User} from "lucide-react";
+import { AdminDetail, CartItem, Customer, Draft, Product, ProductVariant } from '../utils/type';
 import { LoadDraftModal } from './components/LoadDraftModal';
 import { CreateCustomerModal } from './components/CreateCustomerModal';
 import { CartSidebar } from './components/CartSidebarProps';
@@ -15,6 +15,9 @@ import { CheckoutModal } from './components/CheckoutModalProps';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { PageDropDown } from './components/PageDropDown';
+import { hasPermission } from '../utils/permission';
+import { Home, Package, ShoppingCart, DollarSign, Users, Settings, Workflow } from "lucide-react";
 import { toast } from 'sonner';
 import { BarcodeScanner } from './components/BarcodeScanner';
 import { useProducts } from './components/useProduct';
@@ -26,9 +29,12 @@ import { useCustomers } from './components/useCustomers';
 import { parse } from 'path';
 import { parseImageUrl } from '../utils/imageHelper';
 import { OfflineTransactionManager } from './components/OfflineTransactionManager';
+import { useRouter } from 'next/navigation';
 
 export default function POSPage() {
     useEffect(() => {
+        const savedSessionTime = parseInt(localStorage.getItem('pos_session_time') || '0', 10);
+    setSessionTime(savedSessionTime);
     OfflineTransactionManager.cleanupOldRetries();
     OfflineTransactionManager.cleanupLocalTransactions();
   }, []);
@@ -47,7 +53,17 @@ export default function POSPage() {
   const [isHydrated, setIsHydrated] = useState<boolean>(false);
   const [isScannerProcessing, setIsScannerProcessing] = useState<boolean>(false);
   const [filteredVariants, setFilteredVariants] = useState<VariantWithProduct[]>([]);
-  const [adminData, setAdminData] = useState<AdminData | null>(null);
+  const [adminData, setAdminData] = useState<AdminDetail | null>(null);
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
+      const navigation = [
+        { name: "Dashboard", href: "/dashboard", icon: Home, permissions: ["view_inventory","view_expenses","view_customer","view_staff","view_settings","view_login_attempts"] },
+        { name: "Inventory", href: "/inventory", icon: Package, permissions: ["view_inventory"] },
+        { name: "Sales", href: "/sales", icon: ShoppingCart, permissions: ["view_sales"] },
+        { name: "Finance", href: "/expenses", icon: DollarSign, permissions: ["view_expenses"] },
+        { name: "Customers", href: "/customers", icon: Users, permissions: ["view_customer"] },
+        { name: "Staffs", href: "/staffs", icon: Workflow, permissions: ["view_staff"] },
+        { name: "Settings", href: "/settings", icon: Settings, permissions: ["view_settings"] },
+      ];
     const [allVariants, setAllVariants] = useState<VariantWithProduct[]>([]);
 
 
@@ -97,7 +113,7 @@ const calculateManualDiscount = () => {
       const storedAdminData = localStorage.getItem('adminDetail');
     if (storedAdminData) {
       try {
-        const parsedAdminData: AdminData = JSON.parse(storedAdminData);
+        const parsedAdminData: AdminDetail = JSON.parse(storedAdminData);
         setAdminData(parsedAdminData);
         console.log('Admin data loaded:', parsedAdminData);
       } catch (error) {
@@ -116,6 +132,30 @@ const calculateManualDiscount = () => {
     useEffect(() => {
     setAllVariants(variantsFromHook);
   }, [variantsFromHook]);
+
+  useEffect(() => {
+    // Track pending syncs and update counter
+    const checkPendingTransactions = () => {
+      const unsyncedTxns = OfflineTransactionManager.getUnsyncedTransactions();
+      setPendingSyncCount(unsyncedTxns.length);
+    };
+
+    // Check on mount
+    checkPendingTransactions();
+
+    // Check every 5 seconds
+    const interval = setInterval(checkPendingTransactions, 5000);
+
+    // Check when online status changes
+    window.addEventListener('online', checkPendingTransactions);
+    window.addEventListener('offline', checkPendingTransactions);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('online', checkPendingTransactions);
+      window.removeEventListener('offline', checkPendingTransactions);
+    };
+  }, []);
 
   const handleTaxRateChange = (newRate: number) => {
     setTaxRate(newRate);
@@ -155,10 +195,11 @@ const calculateManualDiscount = () => {
   useEffect(() => {
     const timer = setInterval(() => {
       setSessionTime(prev => prev + 1);
+      localStorage.setItem('pos_session_time', (sessionTime + 1).toString());
     }, 1000);
     
     return () => clearInterval(timer);
-  }, []);
+  }, [sessionTime]);
 
   const formatTime = (seconds: number) => {
     const hrs = Math.floor(seconds / 3600);
@@ -317,6 +358,14 @@ const totalDiscount = autoDiscount + manualDiscountAmount;
 
 const finalTotal = Math.max(0, calculateTotal() - totalDiscount);
 
+  const router = useRouter();
+
+  const handleSignOut = () => {
+    localStorage.removeItem('adminToken');
+    localStorage.removeItem('adminDetail');
+    router.push('/auth/login');
+  };
+
 
   const handleBarcodeScanned = async (barcode: string) => {
     setIsScannerProcessing(true);
@@ -369,10 +418,21 @@ const finalTotal = Math.max(0, calculateTotal() - totalDiscount);
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <NetworkStatus />
+         
+            <PageDropDown
+              pages={navigation.filter(item =>
+                !item.permissions || hasPermission(adminData?.permissions, item.permissions)
+              )}
+            />
             <div className="flex items-center gap-2 text-sm text-gray-600">
               <Clock className="h-4 w-4" />
               Session: {formatTime(sessionTime)}
             </div>
+            {pendingSyncCount > 0 && (
+              <Badge variant="outline" className="bg-amber-50 border-amber-300 text-amber-800">
+                ⏳ {pendingSyncCount} pending sync{pendingSyncCount !== 1 ? 's' : ''}
+              </Badge>
+            )}
             <div className="flex items-center gap-2 ml-auto">
               <Badge className="bg-gray-900 text-green-400 px-2 py-1 rounded-md flex items-center gap-1">
                 <User className="h-4 w-4" />
@@ -391,6 +451,13 @@ const finalTotal = Math.max(0, calculateTotal() - totalDiscount);
               />
               <span className="text-sm hidden">%</span>
             </div>
+             <button
+            onClick={handleSignOut}
+            className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium text-red-600 hover:bg-gray-800 hover:text-red-400 rounded-lg transition-colors mt-2"
+          >
+            <LogOut className="h-5 w-5" />
+            Sign Out
+          </button>
           </div>
           
           <Button 

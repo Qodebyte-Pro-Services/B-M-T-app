@@ -227,9 +227,13 @@ const handleInputChange = (field: string, value: string) => {
   if (!token) return toast.error("No auth token found.");
 
   try {
-    const password = newStaff.generatePassword 
-      ? generateRandomPassword() 
+    const finalPassword = newStaff.generatePassword 
+      ? (generatedPassword || generateRandomPassword()) 
       : newStaff.customPassword;
+
+    if (!finalPassword) {
+      return toast.error("Please provide or generate a password");
+    }
 
     const roleObj = roles.find(r => r.role_name === newStaff.role);
     if (!roleObj) return toast.error("Please select a valid role");
@@ -242,7 +246,7 @@ const handleInputChange = (field: string, value: string) => {
       address: newStaff.address,
       state: newStaff.state,
       username: generatedUsername,
-      password: password,
+      password: finalPassword,
     };
 
     const response = await fetch(`${apiUrl}/auth/add-admin`, {
@@ -365,7 +369,7 @@ const handleInputChange = (field: string, value: string) => {
       const token = localStorage.getItem('adminToken');
       if (!token) throw new Error('No authentication token found');
 
-      const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://primelabs.maskiadmin-management.com/api';
+      const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.bmtpossystem.com/api';
       const response = await fetch(`${apiUrl}/analytics/admin-count`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -577,7 +581,10 @@ useEffect(() => {
                             type="radio"
                             id="generate-password"
                             checked={newStaff.generatePassword}
-                            onChange={() => setNewStaff({...newStaff, generatePassword: true, customPassword: ''})}
+                            onChange={() => {
+                              setNewStaff({...newStaff, generatePassword: true, customPassword: ''});
+                              setGeneratedPassword(generateRandomPassword());
+                            }}
                             className="rounded-full"
                           />
                           <Label htmlFor="generate-password" className="text-sm">
@@ -724,7 +731,7 @@ useEffect(() => {
                         <div className="flex items-center gap-3">
                           <Avatar className="h-8 w-8">
                             <AvatarFallback>
-                              {staff.full_name.split(' ')[0][0]}{staff.full_name.split(' ')[1][0]}
+                              {staff.full_name.split(' ')[0]?.[0]}{staff.full_name.split(' ')[1]?.[0] || ''}
                             </AvatarFallback>
                           </Avatar>
                           <div>
