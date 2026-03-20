@@ -381,6 +381,11 @@ const handlePrintReceipt = (receipt: ReceiptTransaction) => {
 
 const ApiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "https://primelabs.maskiadmin-management.com/api";
 
+ const adminToken = localStorage.getItem("adminToken");
+  if (!adminToken) {
+    throw new Error("No authentication token found");
+  }
+
 const handleDeleteClick = (sale: Sale) => {
   setSelectedSaleForDelete(sale);
   setDeleteDialogOpen(true);
@@ -394,6 +399,7 @@ const confirmDelete = async () => {
     const response = await fetch(`${ApiUrl}/sales/${selectedSaleForDelete.id}`, {
       method: "DELETE",
       headers: {
+         Authorization: `Bearer ${adminToken}`,
         "Content-Type": "application/json",
       },
     });
