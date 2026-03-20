@@ -419,6 +419,10 @@ const confirmDelete = async () => {
   
     setDeleteDialogOpen(false);
     setSelectedSaleForDelete(null);
+
+    setTimeout(() => {
+    window.location.reload();
+    }, 500);
   } catch (err) {
     console.error("Delete error:", err);
     toast.error(err instanceof Error ? err.message : "Failed to delete sale");
