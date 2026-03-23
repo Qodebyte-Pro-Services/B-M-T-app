@@ -37,6 +37,8 @@ import ReactDOMServer from 'react-dom/server';
 import { useSales, type CreateSalePayload, type SaleResponse } from './useSales';
 import { OfflineTransactionManager } from './OfflineTransactionManager';
 import { Loader2, AlertCircle } from 'lucide-react';
+import { VariantWithProduct } from './useVariants';
+import { OfflineInventoryManager } from './OfflineInventoryManager';
 
 interface CheckoutModalProps {
   open: boolean;
@@ -49,9 +51,10 @@ interface CheckoutModalProps {
   total: number;
   onComplete: () => void;
   purchaseType: 'in-store' | 'online';
-    totalDiscount?: number;  
+  totalDiscount?: number;  
   itemDiscountToggles?: Record<string, boolean>;
   onWalkInCreated?: () => Promise<void>;
+  allVariants: VariantWithProduct[];
 }
 
 export function CheckoutModal({
@@ -68,6 +71,7 @@ export function CheckoutModal({
   totalDiscount = 0,  
   itemDiscountToggles = {},
   onWalkInCreated,
+  allVariants,
 }: CheckoutModalProps) {
 
   const [customTax, setCustomTax] = useState<number>(tax);
@@ -182,6 +186,29 @@ const calculateInstallments = () => {
   }));
 };
 
+const validateStockAvailability = (): { isValid: boolean; errorMessage?: string } => {
+  for (const cartItem of cart) {
+   
+    const currentVariant = allVariants.find(v => v.variant_id === cartItem.variantId);
+    
+    if (!currentVariant) {
+      return {
+        isValid: false,
+        errorMessage: `❌ ${cartItem.productName} is no longer available in inventory`,
+      };
+    }
+    
+  
+    if (cartItem.quantity > currentVariant.quantity) {
+      return {
+        isValid: false,
+        errorMessage: `⚠️ ${cartItem.productName}: Only ${currentVariant.quantity} items available, but you requested ${cartItem.quantity}. Please adjust your quantity.`,
+      };
+    }
+  }
+  
+  return { isValid: true };
+};
 
 
   useEffect(() => {
@@ -189,6 +216,13 @@ const calculateInstallments = () => {
   }, [useInstallments, installmentPlan.numberOfPayments, installmentPlan.downPayment, amountPaid, netTotal]);
 
 const handleCompleteSale = async () => {
+
+    const stockValidation = validateStockAvailability();
+  if (!stockValidation.isValid) {
+    toast.error(stockValidation.errorMessage || 'Stock validation failed');
+    return;
+  }
+  
   
   // eslint-disable-next-line react-hooks/purity
 
@@ -397,12 +431,27 @@ const handleCompleteSale = async () => {
     // Check if online
     if (!navigator.onLine) {
       setSyncStatus('offline');
-      OfflineTransactionManager.addTransaction(transaction as Transaction);
-      toast.info('🔴 Offline Mode', {
-        description: 'Transaction saved offline. Will sync when online.',
-      });
-      setShowReceipt(true);
-      return;
+       let inventoryRecorded = true;
+      for (const item of cart) {
+        const recorded = OfflineInventoryManager.recordOfflineSale(item.variantId, item.quantity);
+        if (!recorded) {
+          inventoryRecorded = false;
+          toast.error(
+            `⚠️ Cannot save sale: ${item.productName} exceeds offline inventory limit`,
+            { description: 'Please remove some items and try again.' }
+          );
+          setSyncStatus('error');
+          return;
+        }
+      }
+      
+      if (inventoryRecorded) {
+        OfflineTransactionManager.addTransaction(transaction as Transaction);
+        toast.info('🔴 Offline Mode', {
+          description: 'Transaction saved offline. Will sync when online.',
+        });
+        setShowReceipt(true);
+      }
     }
 
     // Prepare payload for backend

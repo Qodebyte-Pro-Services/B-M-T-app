@@ -99,7 +99,10 @@ const [loadingLogins, setLoadingLogins] = useState(false);
   const [kpiLoading, setKpiLoading] = useState(true);
 
 
-
+    const [pendingLogins, setPendingLogins] = useState();
+const [succesfulLogins, setSuccessfulLogins] = useState();
+const [approvedLogins, setApprovedLogins] = useState();
+const [rejectedLogins, setRejectedLogins] = useState();
 
 
  const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://primelabs.maskiadmin-management.com/api';
@@ -133,6 +136,18 @@ const [loadingLogins, setLoadingLogins] = useState(false);
     setLogins(data.data || []);
     setLoginTotalPages(data.pagination.totalPages);
     setLoginCurrentPage(data.pagination.page);
+
+      const loginsArray = data.data || [];
+
+      const pendingCount = loginsArray.filter((login: LoginAttemptType) => login.status === 'pending').length;
+    const successfulCount = loginsArray.filter((login: LoginAttemptType) => login.status === 'completed' || login.status === 'approved').length;
+    const approvedCount = loginsArray.filter((login: LoginAttemptType) => login.status === 'approved').length;
+    const rejectedCount = loginsArray.filter((login: LoginAttemptType) => login.status === 'rejected').length;
+
+    setPendingLogins(pendingCount);
+    setSuccessfulLogins(successfulCount);
+    setApprovedLogins(approvedCount);
+    setRejectedLogins(rejectedCount);
   } catch (err) {
     console.error(err);
     toast.error("Failed to load login attempts");
@@ -743,42 +758,67 @@ const handleRejectLogin = async (id: string) => {
     </div>
 
    
-    <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-      <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-400">Total Logins</p>
-            <p className="text-2xl font-semibold text-white">8</p>
-          </div>
-          <div className="h-10 w-10 rounded-full bg-blue-900/30 flex items-center justify-center">
-            <span className="text-lg">👥</span>
-          </div>
-        </div>
-      </div>
+     <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
       
-      <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-400">Successful Logins</p>
-            <p className="text-2xl font-semibold text-green-300">5</p>
+    <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+  <div className="flex items-center justify-between">
+    <div>
+      <p className="text-sm text-gray-400">Total Logins</p>
+      <p className="text-2xl font-semibold text-white">{logins.length}</p>
+    </div>
+    <div className="h-10 w-10 rounded-full bg-blue-900/30 flex items-center justify-center">
+      <span className="text-lg">👥</span>
+    </div>
+  </div>
+</div>
+
+<div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+  <div className="flex items-center justify-between">
+    <div>
+      <p className="text-sm text-gray-400">Successful Logins</p>
+      <p className="text-2xl font-semibold text-green-300">{succesfulLogins}</p>
+    </div>
+    <div className="h-10 w-10 rounded-full bg-green-900/30 flex items-center justify-center">
+      <span className="text-lg">✅</span>
+    </div>
+  </div>
+</div>
+
+<div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+  <div className="flex items-center justify-between">
+    <div>
+      <p className="text-sm text-gray-400">Pending Approval</p>
+      <p className="text-2xl font-semibold text-green-400">{pendingLogins}</p>
+    </div>
+    <div className="h-10 w-10 rounded-full bg-green-900/30 flex items-center justify-center">
+      <span className="text-lg">⏳</span>
+    </div>
+  </div>
+</div>
+
+<div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+  <div className="flex items-center justify-between">
+    <div>
+      <p className="text-sm text-gray-400">Approved Logins</p>
+      <p className="text-2xl font-semibold text-green-300">{approvedLogins}</p>
+    </div>
+    <div className="h-10 w-10 rounded-full bg-green-900/30 flex items-center justify-center">
+      <span className="text-lg">✅</span>
+    </div>
+  </div>
+</div>
+
+          <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
+           <div className="flex items-center justify-between">
+    <div>
+      <p className="text-sm text-gray-400">Rejected Logins</p>
+      <p className="text-2xl font-semibold text-red-400">{rejectedLogins}</p>
+    </div>
+    <div className="h-10 w-10 rounded-full bg-red-900/30 flex items-center justify-center">
+      <span className="text-lg">❌</span>
+    </div>
+  </div>
           </div>
-          <div className="h-10 w-10 rounded-full bg-green-900/30 flex items-center justify-center">
-            <span className="text-lg">✅</span>
-          </div>
-        </div>
-      </div>
-      
-      <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-gray-400">Pending Approval</p>
-            <p className="text-2xl font-semibold text-green-400">2</p>
-          </div>
-          <div className="h-10 w-10 rounded-full bg-green-900/30 flex items-center justify-center">
-            <span className="text-lg">⏳</span>
-          </div>
-        </div>
-      </div>
     </div>
 
 
