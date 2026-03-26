@@ -95,7 +95,7 @@ export interface Product {
     discount?: Discount;
 }
 
-export interface CreateProductPayload {
+export type CreateProductPayload = {
   name: string;
   brand: string;
   categoryId: string;
@@ -103,9 +103,20 @@ export interface CreateProductPayload {
   taxable: boolean;
   description: string;
   images: File[];
+
   hasVariations: boolean;
+
   baseSku: string;
-  variants: {
+
+  productStock?: {
+    costPrice: number;
+    sellingPrice: number;
+    quantity: number;
+    threshold: number;
+    barcode: string;
+  };
+
+  variants?: {
     name: string;
     sku: string;
     barcode: string;
@@ -115,8 +126,7 @@ export interface CreateProductPayload {
     threshold: number;
     images: File[];
   }[];
-}
-
+};
 
 export type ProductAttributeState = {
     id: string;
@@ -148,7 +158,7 @@ export type EditProductFormData = {
   taxable: boolean;
   unit: string;
   hasVariations: boolean;
-};
+};     
 
 export interface OrderItemAPI {
   id: string;
@@ -157,6 +167,16 @@ export interface OrderItemAPI {
   quantity: number;
   unit_price: number;
   total_price: number;
+  product_name?: string;
+  variant_name?: string;
+  sku?: string;
+  price?: number | string;
+  variant?: {
+    sku: string;
+    product?: {
+      name: string;
+    };
+  };
   Variant?: {
     sku: string;
     Product?: {

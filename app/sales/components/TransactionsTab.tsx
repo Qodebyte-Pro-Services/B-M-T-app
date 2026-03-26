@@ -79,48 +79,6 @@ interface TransactionsTabProps {
 
 
 
-interface OrderItemAPI {
-  id: string;
-  product_id: number;
-  variant_id: number;
-  product_name: string;
-  variant_name: string;
-  sku: string;
-  price: number | string;
-  quantity: number;
-  taxable: boolean;
-  image_url?: string;
-}
-
-interface InstallmentPlanAPI {
-  numberOfPayments: number;
-  amountPerPayment: number;
-  paymentFrequency: 'daily' | 'weekly' | 'monthly';
-  startDate: string;
-  notes: string;
-  downPayment: number;
-  remainingBalance: number;
-}
-
-interface OrderAPI {
-  id: string;
-  Customer: {
-    id: string;
-    name: string;
-    email?: string;
-    phone?: string;
-  };
-  OrderItems: OrderItemAPI[];
-  subtotal: number | string;
-  tax: number | string;
-  total_amount: number | string;
-  discount_total: number | string;
-  CreditAccount?: boolean;
-  InstallmentPlan?: InstallmentPlanAPI;
-  OrderPayment?: { method: string }[];
-  createdAt: string;
-}
-
 
 
 const ITEMS_PER_PAGE = 10;
@@ -130,10 +88,18 @@ function mapSaleToReceipt(sale: Sale): ReceiptTransaction {
     id: item.id,
     productId: Number(item.product_id),
     variantId: Number(item.variant_id),
-    productName: item.Variant?.Product?.name ?? "Unknown", 
-    variantName: item.Variant?.sku ?? "Unknown",
-    sku: item.Variant?.sku ?? "",
-    price: Number(item.unit_price),
+    productName: 
+      item.product_name || 
+      item.variant?.product?.name || 
+      item.Variant?.Product?.name || 
+      "Unknown", 
+    variantName: 
+      item.variant_name || 
+      item.variant?.sku || 
+      item.Variant?.sku || 
+      "Unknown",
+    sku: item.sku || item.variant?.sku || item.Variant?.sku || "",
+    price: Number(item.unit_price || item.price || 0),
     quantity: item.quantity,
   })) ?? [];
 
@@ -176,7 +142,7 @@ export function TransactionsTab({
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
-    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedSaleForDelete, setSelectedSaleForDelete] = useState<Sale | null>(null);
   const [deleting, setDeleting] = useState(false);
 
@@ -185,7 +151,7 @@ export function TransactionsTab({
     const fetchSales = async () => {
       try {
         setLoading(true);
-       const res = await getSales(
+        const res = await getSales(
           dateRange.filter, 
           currentPage, 
           ITEMS_PER_PAGE,
@@ -398,7 +364,7 @@ const confirmDelete = async () => {
     setDeleting(true);
     const response = await fetch(`${ApiUrl}/sales/${selectedSaleForDelete.id}`, {
       method: "DELETE",
-      headers: {
+     headers: {
          Authorization: `Bearer ${adminToken}`,
         "Content-Type": "application/json",
       },
@@ -410,19 +376,19 @@ const confirmDelete = async () => {
     }
 
     const data = await response.json();
-    
+    console.log("Delete response:", data);
     toast.success(`Sale ${selectedSaleForDelete.id} deleted successfully`);
     
-    
+   
     setSales(sales.filter(s => s.id !== selectedSaleForDelete.id));
     
-  
+    
     setDeleteDialogOpen(false);
     setSelectedSaleForDelete(null);
 
     setTimeout(() => {
-    window.location.reload();
-    }, 500);
+  window.location.reload();
+}, 500);
   } catch (err) {
     console.error("Delete error:", err);
     toast.error(err instanceof Error ? err.message : "Failed to delete sale");
@@ -430,6 +396,7 @@ const confirmDelete = async () => {
     setDeleting(false);
   }
 };
+
 
   const paymentBadge = (method: string) => (
     <Badge className="bg-gray-100 text-gray-800">{method}</Badge>
@@ -561,7 +528,7 @@ onClick={() => {
                       <Printer className="h-4 w-4 mr-2" />
                       View Receipt
                     </DropdownMenuItem>
-                      <DropdownMenuItem 
+                        <DropdownMenuItem 
                           className="text-red-600"
                           onClick={() => handleDeleteClick(sale)}
                         >
@@ -621,7 +588,7 @@ onClick={() => {
         )}
       </CardContent>
     </Card>
-       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Delete Sale</AlertDialogTitle>
