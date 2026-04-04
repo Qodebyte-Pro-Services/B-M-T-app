@@ -186,6 +186,7 @@ const calculateInstallments = () => {
   }));
 };
 
+
 const validateStockAvailability = (): { isValid: boolean; errorMessage?: string } => {
   for (const cartItem of cart) {
    
@@ -199,11 +200,23 @@ const validateStockAvailability = (): { isValid: boolean; errorMessage?: string 
     }
     
   
-    if (cartItem.quantity > currentVariant.quantity) {
-      return {
-        isValid: false,
-        errorMessage: `⚠️ ${cartItem.productName}: Only ${currentVariant.quantity} items available, but you requested ${cartItem.quantity}. Please adjust your quantity.`,
-      };
+    if (!navigator.onLine) {
+      const { available, sold, original } = OfflineInventoryManager.checkAvailableStock(cartItem.variantId);
+      
+      if (cartItem.quantity > available) {
+        return {
+          isValid: false,
+          errorMessage: `⚠️ ${cartItem.productName}: Only ${available} unit(s) available offline (${sold}/${original} already sold in other pending sales). Please adjust your quantity.`,
+        };
+      }
+    } else {
+     
+      if (cartItem.quantity > currentVariant.quantity) {
+        return {
+          isValid: false,
+          errorMessage: `⚠️ ${cartItem.productName}: Only ${currentVariant.quantity} items available, but you requested ${cartItem.quantity}. Please adjust your quantity.`,
+        };
+      }
     }
   }
   
