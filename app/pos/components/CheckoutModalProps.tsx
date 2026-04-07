@@ -186,10 +186,9 @@ const calculateInstallments = () => {
   }));
 };
 
-
 const validateStockAvailability = (): { isValid: boolean; errorMessage?: string } => {
   for (const cartItem of cart) {
-   
+  
     const currentVariant = allVariants.find(v => v.variant_id === cartItem.variantId);
     
     if (!currentVariant) {
@@ -199,24 +198,24 @@ const validateStockAvailability = (): { isValid: boolean; errorMessage?: string 
       };
     }
     
-  
-    if (!navigator.onLine) {
-      const { available, sold, original } = OfflineInventoryManager.checkAvailableStock(cartItem.variantId);
-      
-      if (cartItem.quantity > available) {
-        return {
-          isValid: false,
-          errorMessage: `⚠️ ${cartItem.productName}: Only ${available} unit(s) available offline (${sold}/${original} already sold in other pending sales). Please adjust your quantity.`,
-        };
-      }
-    } else {
-     
-      if (cartItem.quantity > currentVariant.quantity) {
-        return {
-          isValid: false,
-          errorMessage: `⚠️ ${cartItem.productName}: Only ${currentVariant.quantity} items available, but you requested ${cartItem.quantity}. Please adjust your quantity.`,
-        };
-      }
+   
+    const { available, sold, original } = OfflineInventoryManager.checkAvailableStock(cartItem.variantId);
+    
+    if (cartItem.quantity > available) {
+      return {
+        isValid: false,
+        errorMessage: `⚠️ ${cartItem.productName}: Insufficient quantity. ` + 
+                     `Available: ${available} | Requested: ${cartItem.quantity} ` +
+                     `(${sold}/${original} already sold in pending or recent transactions).`,
+      };
+    }
+
+ 
+    if (navigator.onLine && cartItem.quantity > currentVariant.quantity) {
+      return {
+        isValid: false,
+        errorMessage: `⚠️ ${cartItem.productName}: Only ${currentVariant.quantity} items available on server, but you requested ${cartItem.quantity}.`,
+      };
     }
   }
   
@@ -608,12 +607,14 @@ const handleCompleteSale = async () => {
       OfflineTransactionManager.markSyncAttempt(newTransactionId, error instanceof Error ? error.message : 'Unknown error');
     }
     
-    toast.error('❌ Transaction Failed', {
-      description:
-        'Transaction could not be completed. Stored for later retry in transaction history.',
+     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+   toast.error('❌ Transaction Failed', {
+      description: errorMessage,
+      duration: 5000,
     });
 
-    setSyncError(error instanceof Error ? error.message : 'Unknown error occurred');
+
+    setSyncError(errorMessage);
     setShowReceipt(true);
   } finally {
     setIsSyncing(false);
