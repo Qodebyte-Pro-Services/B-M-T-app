@@ -215,12 +215,17 @@ const calculateManualDiscount = () => {
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setSessionTime(prev => prev + 1);
-      localStorage.setItem('pos_session_time', (sessionTime + 1).toString());
+      setSessionTime(prev => {
+        const next = prev + 1;
+        if (localStorage.getItem('adminToken')) {
+          localStorage.setItem('pos_session_time', next.toString());
+        }
+        return next;
+      });
     }, 1000);
     
     return () => clearInterval(timer);
-  }, [sessionTime]);
+  }, []);
 
   const formatTime = (seconds: number) => {
     const hrs = Math.floor(seconds / 3600);
@@ -452,6 +457,8 @@ const finalTotal = Math.max(0, calculateTotal() - totalDiscount);
     localStorage.removeItem('adminToken');
     localStorage.removeItem('adminDetail');
     localStorage.removeItem('pos_session_time');  
+    setSessionTime(0);
+    setCart([]);
     
     OfflineInventoryManager.resetSnapshot();
     
