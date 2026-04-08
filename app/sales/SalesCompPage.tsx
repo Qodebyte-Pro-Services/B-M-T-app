@@ -173,7 +173,7 @@ export default function SalesPage() {
       yesterday.setDate(yesterday.getDate() - 1);
       const yesterdayStr = yesterday.toDateString();
       filtered = filtered.filter(t => new Date(t.timestamp).toDateString() === yesterdayStr);
-    } else if (dateRange.filter === 'thisWeek') {
+    } else if (dateRange.filter === 'last7') {
       const now = new Date();
       const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
       startOfWeek.setHours(0, 0, 0, 0);
