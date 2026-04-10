@@ -1874,7 +1874,7 @@ const buildProductFormData = (payload: CreateProductPayload) => {
   }
 
  
-  const variantsJson = payload.variants.map(v => ({
+  const variantsJson = (payload.variants || []).map(v => ({
     sku: v.sku,
     barcode: v.barcode,
     cost_price: v.costPrice,
@@ -1887,7 +1887,7 @@ const buildProductFormData = (payload: CreateProductPayload) => {
 
 
   let variantImageCount = 0;
-  payload.variants.forEach((variant, index) => {
+  (payload.variants || []).forEach((variant, index) => {
     if (variant.images && variant.images.length > 0) {
       variant.images.forEach((file) => {
       
