@@ -64,7 +64,13 @@ export function useOfflineSync(onWalkInSynced?: () => Promise<void>): UseOffline
             unit_price: Math.round(item.price * 100) / 100, 
           })),
          
-          payments: [
+payments: transactionData.paymentMethod === 'split' && transactionData.splitPayments
+            ? transactionData.splitPayments.map((p) => ({
+                method: p.method as 'cash' | 'card' | 'transfer' | 'split' | 'installment' | 'credit',
+                amount: Math.round(p.amount * 100) / 100,
+                reference: transactionData.id,
+              }))
+            : [
             {
               method: transactionData.paymentMethod as 'cash' | 'card' | 'transfer' | 'split' | 'installment' | 'credit',
               amount: Math.round(transactionData.amountPaid * 100) / 100,

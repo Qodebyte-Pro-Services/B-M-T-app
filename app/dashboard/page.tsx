@@ -203,6 +203,27 @@ const handleRejectLogin = async (id: string) => {
 };
 
 
+  const fetchCategories = async () => {
+    try {
+      const token = localStorage.getItem('adminToken');
+      if (!token) throw new Error('No authentication token found');
+
+      const response = await fetch(`${apiUrl}/expenses/categories`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch categories');
+
+      const data = await response.json();
+      setCategories(data);
+    } catch (err) {
+      console.error('Error fetching categories:', err);
+    }
+  };
+
   const fetchKPIData = async (filterType: string) => {
     try {
       setKpiLoading(true);
@@ -333,6 +354,11 @@ const handleRejectLogin = async (id: string) => {
     useEffect(() => {
       fetchExpenses(1);
     }, [statusFilter, filterDate]);
+
+        useEffect(() => {
+       fetchCategories();
+    }, []);
+
 
 
   const handleViewInvoice = (expense: Expense) => {
