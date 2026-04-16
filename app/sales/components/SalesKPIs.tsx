@@ -116,9 +116,9 @@ export function SalesKPIs({ kpiData }: SalesKPIsProps) {
                 <div key={type} className="flex items-center justify-between p-1 bg-gray-50 rounded-lg">
                   <div className="flex items-center gap-3 lg:gap-1">
                     <div className={`p-1 rounded-lg ${
-                      type === 'in-store' ? 'bg-blue-100' : 'bg-green-100'
+                      type === 'in_store' ? 'bg-blue-100' : 'bg-green-100'
                     }`}>
-                      {type === 'in-store' ? (
+                      {type === 'in_store' ? (
                         <Store className="h-5 w-5 text-blue-600" />
                       ) : (
                         <Globe className="h-5 w-5 text-green-600" />
@@ -126,7 +126,7 @@ export function SalesKPIs({ kpiData }: SalesKPIsProps) {
                     </div>
                     <div>
                       <div className="font-medium capitalize">
-                        {type === 'in-store' ? 'In-Store' : 'Online'}
+                        {type === 'in_store' ? 'In-Store' : 'Online'}
                       </div>
                       <div className="text-sm text-gray-500">
                         {data.count} transactions
